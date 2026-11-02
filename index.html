@@ -1,11 +1,402 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="BITS-SIMS - Student Information Management System Portal." />
+  <title>BITS-SIMS | Portal</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    
+
+  <main id="loginView" class="login-wrapper">
+    <div class="card">
+
+      <header class="banner">
+        <h2>Welcome to</h2>
+        <img src="images/BITS_WHITE-BLUE LOGO 2.png" alt="BITS-SIMS Tech Lion Logo" class="logo-image" />
+        <h1 class="brand-title">BITS-SIMS</h1>
+        <p class="subtitle">
+          A Student Information Management System that Encapsulates All Pertinent Student Information
+        </p>
+      </header>
+
+      <section class="form-section" aria-labelledby="formHeading">
+        <h2 id="formHeading" class="form-title">Enter your credentials</h2>
+
+        <form id="loginForm" novalidate>
+          <div class="input-group">
+            <label for="username">Username or Email</label>
+            <input type="text" id="username" name="username" placeholder="Enter Username or Email"
+                   autocomplete="username" aria-required="true" required />
+          </div>
+
+          <div class="input-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" placeholder="Enter Password"
+                   autocomplete="current-password" aria-required="true" required />
+          </div>
+
+          <button type="submit" class="submit-btn">Log In</button>
+        </form>
+
+        <nav class="forgot-link" aria-label="Account Recovery">
+          <a href="#">Forgotten your username or email?</a>
+        </nav>
+      </section>
+
+    </div>
+  </main>
+
+
+  <div id="dashboardView" class="dashboard-wrapper hidden">
+
+    <header class="top-nav">
+      <div class="nav-brand">
+        <img src="images/BITS_WHITE-BLUE LOGO 2.png" alt="BITS-SIMS Logo" class="nav-logo" />
+        <span class="nav-title">BITS-SIMS</span>
+      </div>
+      <div class="nav-user-area">
+        <span id="currentViewTitle" class="nav-page-label">Dashboard</span>
+        <span class="nav-divider" aria-hidden="true"></span>
+        <button type="button" class="user-avatar-badge" id="navAvatarBtn" aria-label="View my profile" title="View my profile">
+          <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="User avatar" data-avatar />
+        </button>
+      </div>
+    </header>
+
+    <div class="app-layout">
+
+      <nav class="sidebar" aria-label="Main Navigation">
+        <ul class="sidebar-menu">
+          <li>
+            <a href="#" class="sidebar-item active" data-page="home">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg>
+              <span>Home</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="sidebar-item" data-page="profile">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1z"/></svg>
+              <span>Student Profile</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="sidebar-item" data-page="admissions">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              <span>Admissions &amp; Enrollment</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="sidebar-item" data-page="attendance">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 2h6v4H9z"/></svg>
+              <span>Attendance</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="sidebar-item" data-page="records">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 13h4"/></svg>
+              <span>Academic Records</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="sidebar-item" data-page="reports">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/><path d="M9 21h6"/></svg>
+              <span>Reports &amp; Analytics Generation</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="sidebar-item" data-page="documents">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M9 14h6"/></svg>
+              <span>Document Management</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="sidebar-item" data-page="settings">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span>Account Settings</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" id="logoutBtn" class="sidebar-item logout-link">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+              <span>Log Out</span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="dashboard-main">
+
+        <section id="page-home" class="page">
+        <div class="dashboard-panel">
+
+          <div class="panel-grid">
+
+            <section class="dash-card student-card" id="studentCard" role="link" tabindex="0" aria-label="View my profile" title="View my profile">
+              <div class="student-avatar-container">
+                <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="Student Avatar" class="student-avatar" data-avatar />
+              </div>
+              <h2 class="student-name" data-student-name>Dawson James<br />Garcia</h2>
+            </section>
+
+            <section class="dash-card info-card">
+              <div class="info-header-row">
+                <span class="col-heading">Courses</span>
+                <span class="col-heading">Attendance</span>
+                <span class="col-heading">Taken Sessions</span>
+              </div>
+
+              <div class="info-row">
+                <div class="course-text">TS-ITP3112R-BSIT-3B-1AY2627 ITP3112R-System Administration and Maintenance 1-BSIT-3B-1st Semester, AY26-27</div>
+                <div class="attendance-date">Attendance<br />10-1-2026</div>
+                <div class="sessions-count">9 Sessions</div>
+              </div>
+
+              <div class="info-row">
+                <div class="course-text">TS-GEN-RP-BSIT-3B-1AY2627 GEN-RP-Readings in Philippine History-BSIT-3B-1st Semester, AY26-27</div>
+                <div class="attendance-date">Attendance<br />10-2-2026</div>
+                <div class="sessions-count">5 Sessions</div>
+              </div>
+            </section>
+
+            <section class="dash-card courses-list-card">
+              <h3 class="card-section-title">Courses</h3>
+              <ul class="course-list">
+                <li class="course-pill selected" tabindex="0">TS-ITP3112R-BSIT-3B-1AY2627 ITP3112R-System Administration and Maintenance 1-BSIT-3B-1st Semester, AY26-27</li>
+                <li class="course-pill" tabindex="0">TS-GEN-RP-BSIT-3B-1AY2627 GEN-RP-Readings in Philippine History-BSIT-3B-1st Semester, AY26-27</li>
+                <li class="course-pill selected" tabindex="0">TS-ITP3111R-BSIT-3B-1AY2627 ITP3111R-Network Management 2-BSIT-3B-1st Semester, AY26-27</li>
+                <li class="course-pill" tabindex="0">TS-ITA312R-BSIT-3B-1AY2627 ITA312R-Platform Technologies 3 (Cloud Computing)-BSIT-3B-1st Semester, AY26-27</li>
+              </ul>
+            </section>
+
+            <button type="button" class="dash-card action-card" id="academicRecordsCard">
+              <svg class="folder-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                <path d="M9 14h6"/>
+              </svg>
+              <span class="action-title">Academic Records</span>
+            </button>
+
+          </div>
+
+          <aside class="dash-card calendar-card" aria-label="Calendar">
+            <div class="calendar-head">
+              <button type="button" class="cal-nav" id="calPrev" aria-label="Previous month">&#8249;</button>
+              <h3 class="calendar-month-title" id="calendarTitle" aria-live="polite">November 2026</h3>
+              <button type="button" class="cal-nav" id="calNext" aria-label="Next month">&#8250;</button>
+            </div>
+            <div class="calendar-grid" id="calendarGrid"></div>
+            <p class="cal-selected" id="calSelected"></p>
+            <button type="button" class="cal-today-btn" id="calToday">Today</button>
+          </aside>
+
+        </div>
+        </section>
+
+        <section id="page-profile" class="page hidden" aria-label="Student Profile">
+          <div class="profile-panel">
+
+            <div class="profile-top">
+              <div class="profile-tabs" role="tablist" aria-label="Profile sections">
+                <button type="button" class="profile-tab active" role="tab" id="tab-general" aria-controls="generalForm" aria-selected="true" data-tab="general">
+                  <span class="tab-chip" aria-hidden="true">&#8250;</span> General
+                </button>
+                <button type="button" class="profile-tab" role="tab" id="tab-picture" aria-controls="pictureForm" aria-selected="false" data-tab="picture">
+                  <span class="tab-chip" aria-hidden="true">&#8250;</span> User Picture
+                </button>
+                <button type="button" class="profile-tab" role="tab" id="tab-contact" aria-controls="contactForm" aria-selected="false" data-tab="contact">
+                  <span class="tab-chip" aria-hidden="true">&#8250;</span> Contact Information
+                </button>
+              </div>
+
+              <div class="profile-identity">
+                <div class="profile-avatar">
+                  <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="Profile picture" data-avatar />
+                </div>
+                <p class="profile-name" data-student-name>Dawson James<br />Garcia</p>
+              </div>
+            </div>
+
+            <form id="generalForm" class="tab-panel general-grid" role="tabpanel" aria-labelledby="tab-general" data-panel="general" novalidate>
+              <div class="field">
+                <label for="firstName">First Name</label>
+                <input type="text" id="firstName" name="firstName" autocomplete="given-name" />
+                <small class="field-error" id="firstNameError"></small>
+              </div>
+
+              <div class="field">
+                <label for="emailVisibility">Email Visibility</label>
+                <select id="emailVisibility" name="emailVisibility">
+                  <option value="hidden">Hidden from everyone</option>
+                  <option value="course">Visible to course participants</option>
+                  <option value="everyone">Visible to everyone</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="timezone">Timezone</label>
+                <select id="timezone" name="timezone">
+                  <option value="Asia/Manila">Asia / Manila</option>
+                  <option value="Asia/Singapore">Asia / Singapore</option>
+                  <option value="Asia/Tokyo">Asia / Tokyo</option>
+                  <option value="Asia/Dubai">Asia / Dubai</option>
+                  <option value="Europe/London">Europe / London</option>
+                  <option value="America/New_York">America / New York</option>
+                  <option value="America/Los_Angeles">America / Los Angeles</option>
+                  <option value="Australia/Sydney">Australia / Sydney</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="lastName">Last Name</label>
+                <input type="text" id="lastName" name="lastName" autocomplete="family-name" />
+                <small class="field-error" id="lastNameError"></small>
+              </div>
+
+              <div class="field">
+                <label for="city">City / Town</label>
+                <input type="text" id="city" name="city" autocomplete="address-level2" />
+              </div>
+
+              <div class="form-actions general-actions">
+                <button type="submit" class="btn-outline">Save</button>
+                <button type="button" class="btn-outline" id="generalCancel">Cancel</button>
+              </div>
+
+              <div class="field">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" name="email" autocomplete="email" />
+                <small class="field-error" id="emailError"></small>
+              </div>
+
+              <div class="field">
+                <label for="country">Country</label>
+                <select id="country" name="country" autocomplete="country-name">
+                  <option>Philippines</option>
+                  <option>Singapore</option>
+                  <option>Japan</option>
+                  <option>United Arab Emirates</option>
+                  <option>United Kingdom</option>
+                  <option>United States</option>
+                  <option>Australia</option>
+                </select>
+              </div>
+            </form>
+
+            <form id="pictureForm" class="tab-panel picture-grid hidden" role="tabpanel" aria-labelledby="tab-picture" data-panel="picture" novalidate>
+              <div class="picture-current">
+                <span class="field-label">Current Picture</span>
+                <div class="current-picture-frame" id="currentPictureFrame">
+                  <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="Current profile picture" data-avatar />
+                </div>
+                <label class="check-row">
+                  <input type="checkbox" id="deletePicture" />
+                  <span>Delete picture</span>
+                </label>
+              </div>
+
+              <div class="picture-new">
+                <span class="field-label" id="newPictureLabel">New Picture</span>
+                <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-labelledby="newPictureLabel" aria-describedby="dropzoneHint">
+                  <div class="dz-empty" id="dzEmpty">
+                    <svg class="dz-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                      <path d="M9 14h6"/>
+                    </svg>
+                    <p id="dropzoneHint">You can drag and drop files here to add them.</p>
+                    <small>or click to browse (images, up to 5 MB)</small>
+                  </div>
+                  <div class="dz-preview hidden" id="dzPreview">
+                    <img src="" alt="New picture preview" id="dzPreviewImg" />
+                    <p id="dzFileName"></p>
+                  </div>
+                  <input type="file" id="pictureInput" accept="image/*" hidden />
+                </div>
+              </div>
+
+              <div class="form-actions picture-actions">
+                <button type="submit" class="btn-outline">Save</button>
+                <button type="button" class="btn-outline" id="pictureCancel">Cancel</button>
+              </div>
+            </form>
+
+            <form id="contactForm" class="tab-panel contact-grid hidden" role="tabpanel" aria-labelledby="tab-contact" data-panel="contact" novalidate>
+              <div class="field">
+                <label for="currentNumber">Current Number</label>
+                <input type="text" id="currentNumber" readonly placeholder="No number on file" />
+                <label class="check-row">
+                  <input type="checkbox" id="deleteNumber" />
+                  <span>Delete number</span>
+                </label>
+              </div>
+
+              <div class="field">
+                <label for="newNumber">New Number</label>
+                <input type="tel" id="newNumber" name="newNumber" placeholder="Enter new number" autocomplete="tel" inputmode="tel" />
+                <small class="field-error" id="newNumberError"></small>
+              </div>
+
+              <div class="form-actions contact-actions">
+                <button type="submit" class="btn-outline">Save</button>
+                <button type="button" class="btn-outline" id="contactCancel">Cancel</button>
+              </div>
+            </form>
+
+          </div>
+        </section>
+
+        <section id="page-userprofile" class="page hidden" aria-label="My Profile">
+          <div class="up-panel">
+
+            <section class="dash-card up-identity">
+              <div class="up-avatar">
+                <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="Profile picture" data-avatar />
+              </div>
+              <h2 class="up-name" data-full-name>Dawson James Garcia</h2>
+              <p class="up-role">Student</p>
+              <p class="up-program">BSIT-3B &middot; 1st Semester, AY26-27</p>
+              <button type="button" class="btn-solid" id="editProfileBtn">Edit Profile</button>
+            </section>
+
+            <section class="dash-card up-details">
+              <h3 class="card-section-title">Personal Information</h3>
+              <dl class="up-list">
+                <div class="up-row"><dt>Full Name</dt><dd data-up="fullName"></dd></div>
+                <div class="up-row"><dt>Email Address</dt><dd data-up="email"></dd></div>
+                <div class="up-row"><dt>Email Visibility</dt><dd data-up="emailVisibility"></dd></div>
+                <div class="up-row"><dt>Contact Number</dt><dd data-up="phone"></dd></div>
+                <div class="up-row"><dt>City / Town</dt><dd data-up="city"></dd></div>
+                <div class="up-row"><dt>Country</dt><dd data-up="country"></dd></div>
+                <div class="up-row"><dt>Timezone</dt><dd data-up="timezone"></dd></div>
+              </dl>
+            </section>
+
+            <section class="dash-card up-courses">
+              <h3 class="card-section-title">Enrolled Courses</h3>
+              <ul class="up-course-list" id="upCourses"></ul>
+            </section>
+
+            <section class="dash-card up-attendance-card">
+              <h3 class="card-section-title">Attendance Summary</h3>
+              <ul class="up-attendance-list" id="upAttendance"></ul>
+            </section>
+
+          </div>
+        </section>
+
+        <section id="page-placeholder" class="page hidden">
+          <div class="placeholder-panel">
+            <h2 id="placeholderTitle">Coming soon</h2>
+            <p>This section hasn't been built yet.</p>
+          </div>
+        </section>
+
+        <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      </main>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
 </body>
 </html>
