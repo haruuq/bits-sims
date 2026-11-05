@@ -106,6 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
     documents: $('#page-documents'),
     settings: $('#page-settings'),
     reports: $('#page-reports'),
+    records: $('#page-records'),
     userprofile: $('#page-userprofile'),
     placeholder: $('#page-placeholder')
   };
@@ -642,58 +643,54 @@ document.addEventListener('DOMContentLoaded', () => {
     attendance: 'Attendance Analytics'
   };
 
-  const reportData = {
-    studentId: '2024-12345',
-    program: 'BS Information Technology',
-    section: 'BSIT-3B',
-    yearLevel: '3rd Year',
+  // Module 3 & 4 share one data source (data.js). This rebuilds the shape the
+  // report builders below expect, every time that data changes.
+  let reportData = buildReportData();
 
-    // Last completed semester
-    reportCard: {
-      term: '2nd Semester',
-      ay: 'AY 2025-2026',
-      subjects: [
-        { title: 'Web Development Fundamentals', units: 3, grade: 1.75 },
-        { title: 'Database Systems', units: 3, grade: 1.5 },
-        { title: 'Discrete Mathematics', units: 3, grade: 2.0 },
-        { title: 'Computer Networks', units: 3, grade: 1.75 },
-        { title: 'IT Ethics and Professional Practice', units: 3, grade: 1.75 }
-      ]
-    },
+  function buildReportData() {
+    const D = window.SIMSData;
+    const st = D.student();
+    const last = D.lastCompletedTerm();
+    const current = D.currentTerm();
+    const currentSubjects = D.subjectsIn(current.id);
 
-    // Current semester (matches the courses on the dashboard)
-    enrolled: {
-      term: '1st Semester',
-      ay: 'AY 2026-2027',
-      subjects: [
-        { code: 'ITP3112R', title: 'System Administration and Maintenance 1', units: 3, section: 'BSIT-3B' },
-        { code: 'GEN-RP', title: 'Readings in Philippine History', units: 3, section: 'BSIT-3B' },
-        { code: 'ITP3111R', title: 'Network Management 2', units: 3, section: 'BSIT-3B' },
-        { code: 'ITA312R', title: 'Platform Technologies 3 (Cloud Computing)', units: 3, section: 'BSIT-3B' }
-      ]
-    },
+    return {
+      studentId: st.id,
+      program: st.program,
+      section: st.section,
+      yearLevel: st.yearLevel,
 
-    // gwa: null means "calculate from the report card"
-    records: [
-      { ay: '2024-2025', sem: '1st Sem', gwa: 1.85 },
-      { ay: '2024-2025', sem: '2nd Sem', gwa: 1.8 },
-      { ay: '2025-2026', sem: '1st Sem', gwa: 1.75 },
-      { ay: '2025-2026', sem: '2nd Sem', gwa: null }
-    ],
+      // Last completed semester
+      reportCard: {
+        term: last ? last.sem : '',
+        ay: last ? `AY ${last.ay}` : '',
+        subjects: (last ? D.subjectsIn(last.id) : [])
+          .filter((s) => typeof s.finalGrade === 'number')
+          .map((s) => ({ title: s.title, units: s.units, grade: s.finalGrade }))
+      },
 
-    attendance: {
-      subjects: [
-        { title: 'System Administration and Maintenance 1', held: 9, absent: 0, late: 1 },
-        { title: 'Readings in Philippine History', held: 5, absent: 0, late: 0 },
-        { title: 'Network Management 2', held: 8, absent: 1, late: 1 },
-        { title: 'Platform Technologies 3 (Cloud Computing)', held: 7, absent: 0, late: 1 }
-      ],
-      pastTerms: [
-        { label: '1st Sem AY25-26', rate: 94.0 },
-        { label: '2nd Sem AY25-26', rate: 95.2 }
-      ]
-    }
-  };
+      // Current semester
+      enrolled: {
+        term: current.sem,
+        ay: `AY ${current.ay}`,
+        termLabel: D.shortTermLabel(current),
+        subjects: currentSubjects.map((s) => ({ code: s.code, title: s.title, units: s.units, section: s.section || st.section }))
+      },
+
+      // Completed terms only
+      records: D.terms()
+        .filter((t) => !t.current)
+        .map((t) => ({ ay: t.ay, sem: t.sem.replace('Semester', 'Sem'), gwa: D.termSummary(t.id).gwa, termId: t.id }))
+        .filter((r) => r.gwa !== null),
+
+      attendance: {
+        subjects: currentSubjects
+          .filter((s) => s.attendance && s.attendance.held)
+          .map((s) => ({ title: s.title, held: s.attendance.held, absent: s.attendance.absent, late: s.attendance.late, excused: s.attendance.excused || 0 })),
+        pastTerms: D.get().attendanceHistory.map((h) => ({ label: D.shortTermLabel(D.term(h.termId)), rate: h.rate }))
+      }
+    };
+  }
 
   const generatedAt = {
     report: new Date(),
@@ -720,27 +717,27 @@ document.addEventListener('DOMContentLoaded', () => {
     return units ? points / units : 0;
   };
 
-  const standingFor = (gwa) => (gwa <= 1.75 ? "Dean's Lister" : 'Good Standing');
+  // Passing grade, Dean's List cut-off and attendance thresholds come from data.js rules
+  const standingFor = (gwa, subjects = []) =>
+    subjects.some((s) => !window.SIMSData.isPassing(s.grade))
+      ? 'Academic Warning'
+      : gwa <= window.SIMSData.rules().deansListMax ? "Dean's Lister" : 'Good Standing';
 
   function attendanceTotals() {
     const subjects = reportData.attendance.subjects;
-    const held = subjects.reduce((sum, s) => sum + s.held, 0);
-    const absent = subjects.reduce((sum, s) => sum + s.absent, 0);
-    const late = subjects.reduce((sum, s) => sum + s.late, 0);
-    return { held, absent, late, rate: held ? ((held - absent) / held) * 100 : 0 };
+    const sum = (key) => subjects.reduce((total, s) => total + (s[key] || 0), 0);
+    const totals = { held: sum('held'), absent: sum('absent'), late: sum('late'), excused: sum('excused') };
+    totals.rate = window.SIMSData.attendanceRate(totals) || 0;
+    return totals;
   }
 
   function attendanceStatus(rate) {
-    if (rate >= 95) return { cls: 'badge-ok', label: 'On Track' };
-    if (rate >= 90) return { cls: 'badge-warn', label: 'Watch' };
-    return { cls: 'badge-risk', label: 'At Risk' };
+    const st = window.SIMSData.attendanceStatus(rate);
+    return { cls: `badge-${st.key === 'none' ? 'warn' : st.key}`, label: st.label };
   }
 
   const recordRows = () =>
-    reportData.records.map((r) => {
-      const gwa = r.gwa !== null ? r.gwa : weighted(reportData.reportCard.subjects);
-      return { ay: r.ay, sem: r.sem, gwa, status: standingFor(gwa) };
-    });
+    reportData.records.map((r) => ({ ay: r.ay, sem: r.sem, gwa: r.gwa, status: window.SIMSData.termSummary(r.termId).standing }));
 
   const formatStamp = (date) =>
     date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
@@ -779,7 +776,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rc = reportData.reportCard;
     const gwa = weighted(rc.subjects);
     const rows = rc.subjects
-      .map((s) => `<tr><td>${esc(s.title)}</td><td class="num">${s.units.toFixed(1)}</td><td class="num">${s.grade.toFixed(2)}</td><td>${s.grade <= 3 ? 'Passed' : 'Failed'}</td></tr>`)
+      .map((s) => `<tr><td>${esc(s.title)}</td><td class="num">${s.units.toFixed(1)}</td><td class="num">${s.grade.toFixed(2)}</td><td>${window.SIMSData.isPassing(s.grade) ? 'Passed' : 'Failed'}</td></tr>`)
       .join('');
 
     return `
@@ -796,7 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </table>
       <div class="paper-summary">
         <strong>General Weighted Average (GWA): ${gwa.toFixed(2)}</strong><br />
-        Academic Standing: <strong>${standingFor(gwa)}</strong>
+        Academic Standing: <strong>${standingFor(gwa, rc.subjects)}</strong>
       </div>
       ${stampLine('report')}`;
   }
@@ -827,7 +824,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function recordsHtml() {
     const rows = recordRows();
-    const cumulative = rows.reduce((sum, r) => sum + r.gwa, 0) / rows.length;
+    const cumulative = window.SIMSData.cumulativeGwa() || 0;
     const body = rows
       .map((r) => `<tr><td>${esc(r.ay)}</td><td>${esc(r.sem)}</td><td class="num">${r.gwa.toFixed(2)}</td><td>${esc(r.status)}</td></tr>`)
       .join('');
@@ -849,7 +846,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function trendChart(points) {
-    const w = 300, h = 130, padL = 34, padR = 14, padT = 14, padB = 28;
+    const w = 300, h = 130, padL = 46, padR = 30, padT = 16, padB = 28;
     const min = 90, max = 100;
     const x = (i) => padL + (i * (w - padL - padR)) / (points.length - 1);
     const y = (v) => padT + ((max - Math.min(Math.max(v, min), max)) * (h - padT - padB)) / (max - min);
@@ -859,8 +856,7 @@ document.addEventListener('DOMContentLoaded', () => {
       .join('');
     const line = points.map((p, i) => `${x(i).toFixed(1)},${y(p.rate).toFixed(1)}`).join(' ');
     const dots = points
-      .map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.rate).toFixed(1)}" r="3.5" fill="#1565c0"/>
-        <text x="${x(i).toFixed(1)}" y="${(y(p.rate) - 8).toFixed(1)}" text-anchor="middle" font-size="8" font-weight="700" fill="#17356b">${p.rate.toFixed(1)}%</text>
+      .map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.rate).toFixed(1)}" r="3.5" fill="#1565c0"><title>${esc(p.label)}: ${p.rate.toFixed(1)}%</title></circle>
         <text x="${x(i).toFixed(1)}" y="${h - 10}" text-anchor="middle" font-size="7.5" fill="#556070">${esc(p.label)}</text>`)
       .join('');
 
@@ -869,33 +865,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function attendanceHtml() {
     const totals = attendanceTotals();
-    const points = [...reportData.attendance.pastTerms, { label: '1st Sem AY26-27', rate: totals.rate }];
+    const points = [...reportData.attendance.pastTerms, { label: reportData.enrolled.termLabel, rate: totals.rate }];
     const rows = reportData.attendance.subjects
       .map((s) => {
-        const rate = ((s.held - s.absent) / s.held) * 100;
+        const rate = window.SIMSData.attendanceRate(s) || 0;
         const status = attendanceStatus(rate);
-        return `<tr><td>${esc(s.title)}</td><td class="num">${rate.toFixed(1)}%</td><td class="num"><span class="badge ${status.cls}">${status.label}</span></td></tr>`;
+        return `<tr><td>${esc(s.title)}</td><td class="num">${s.held}</td><td class="num">${s.absent}</td><td class="num">${s.late}</td><td class="num">${s.excused || 0}</td><td class="num">${rate.toFixed(1)}%</td><td class="num"><span class="badge ${status.cls}">${status.label}</span></td></tr>`;
       })
       .join('');
 
     return `
-      ${paperHead('ATTENDANCE ANALYTICS REPORT', 'AY 2026-2027 &middot; 1st Semester (to date)')}
+      ${paperHead('ATTENDANCE ANALYTICS REPORT', `${esc(reportData.enrolled.ay)} &middot; ${esc(reportData.enrolled.term)} (to date)`)}
       ${infoRows([
         ['Student Name', studentFullName()],
         ['Student ID', reportData.studentId],
         ['Course', reportData.program],
         ['Section', reportData.section]
       ])}
-      <div class="paper-stats">
+      <div class="paper-stats has-4">
         <div class="paper-stat"><strong>${totals.rate.toFixed(1)}%</strong>Overall Attendance</div>
         <div class="paper-stat"><strong>${totals.absent}</strong>Total Absences</div>
         <div class="paper-stat"><strong>${totals.late}</strong>Total Tardiness</div>
+        <div class="paper-stat"><strong>${totals.excused}</strong>Excused</div>
       </div>
       <p class="paper-section">Attendance Rate Trend</p>
       <div class="paper-chart">${trendChart(points)}</div>
       <p class="paper-section">By Subject</p>
       <table class="paper-table">
-        <thead><tr><th>Subject</th><th class="num">Attendance Rate</th><th class="num">Status</th></tr></thead>
+        <thead><tr><th>Subject</th><th class="num">Sessions</th><th class="num">Absent</th><th class="num">Late</th><th class="num">Excused</th><th class="num">Attendance Rate</th><th class="num">Status</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       ${stampLine('attendance')}`;
@@ -924,6 +921,14 @@ document.addEventListener('DOMContentLoaded', () => {
     $('[data-stat="attendance"]').textContent = `${stats.attendance}%`;
     $('[data-stat="gpa"]').textContent = stats.gpa.toFixed(2);
   }
+
+  // Live updates: whenever Module 3 data changes, rebuild and redraw the reports
+  window.SIMSData.subscribe(() => {
+    reportData = buildReportData();
+    Object.keys(generatedAt).forEach((doc) => (generatedAt[doc] = new Date()));
+    renderReports();
+    renderAccount();
+  });
 
   function animateStats() {
     const stats = computeStats();
@@ -974,14 +979,73 @@ document.addEventListener('DOMContentLoaded', () => {
     repOverview.classList.add('hidden');
     repDocuments.classList.remove('hidden');
 
+    // Show only the chosen report; the tabs switch between them
+    $$('.doc-card').forEach((c) => c.classList.toggle('hidden', c.id !== 'doc-' + doc));
+    $$('.rep-doc-tab').forEach((tab) => {
+      const active = tab.dataset.docTab === doc;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', String(active));
+    });
+
     const card = $('#doc-' + doc);
     window.scrollTo(0, 0);
     if (action === 'generate') generateDocument(doc);
 
-    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
     card.classList.remove('doc-flash');
     void card.offsetWidth; // restart the highlight animation
     card.classList.add('doc-flash');
+  }
+
+  /* ---- "Export CSV" (opens in Excel / Google Sheets) ---- */
+  function csvRows(doc) {
+    const head = [['Student Name', studentFullName()], ['Student ID', reportData.studentId], ['Course', reportData.program], ['Year Level', reportData.yearLevel], []];
+
+    if (doc === 'report') {
+      const rc = reportData.reportCard;
+      const gwa = weighted(rc.subjects);
+      return [['REPORT CARD', `${rc.term}, ${rc.ay}`], ...head, ['Subject', 'Units', 'Final Grade', 'Remarks'],
+        ...rc.subjects.map((s) => [s.title, s.units, s.grade.toFixed(2), window.SIMSData.isPassing(s.grade) ? 'Passed' : 'Failed']),
+        [], ['GWA', gwa.toFixed(2)], ['Academic Standing', standingFor(gwa, rc.subjects)]];
+    }
+    if (doc === 'enrollment') {
+      const en = reportData.enrolled;
+      return [['ENROLLMENT SUMMARY', `${en.term}, ${en.ay}`], ...head, ['Subject Code', 'Subject Title', 'Units', 'Section'],
+        ...en.subjects.map((s) => [s.code, s.title, s.units, s.section]),
+        [], ['Total Units', en.subjects.reduce((sum, s) => sum + s.units, 0)]];
+    }
+    if (doc === 'records') {
+      const cumulative = window.SIMSData.cumulativeGwa();
+      return [['ACADEMIC RECORDS', 'Academic History'], ...head, ['School Year', 'Semester', 'GWA', 'Academic Status'],
+        ...recordRows().map((r) => [r.ay, r.sem, r.gwa.toFixed(2), r.status]),
+        [], ['Cumulative GWA', cumulative === null ? '' : cumulative.toFixed(2)]];
+    }
+    const totals = attendanceTotals();
+    return [['ATTENDANCE ANALYTICS', `${reportData.enrolled.term}, ${reportData.enrolled.ay}`], ...head,
+      ['Subject', 'Sessions', 'Absent', 'Late', 'Excused', 'Attendance Rate (%)', 'Status'],
+      ...reportData.attendance.subjects.map((s) => {
+        const rate = window.SIMSData.attendanceRate(s) || 0;
+        return [s.title, s.held, s.absent, s.late, s.excused || 0, rate.toFixed(1), attendanceStatus(rate).label];
+      }),
+      [], ['Overall', totals.held, totals.absent, totals.late, totals.excused, totals.rate.toFixed(1), attendanceStatus(totals.rate).label]];
+  }
+
+  function exportCsv(doc) {
+    const cell = (v) => {
+      const text = String(v === undefined || v === null ? '' : v);
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const csv = csvRows(doc).map((row) => row.map(cell).join(',')).join('\r\n');
+    // The BOM makes Excel read the file as UTF-8 (so names with n-tilde etc. show correctly)
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `BITS-SIMS ${DOC_LABELS[doc]} - ${studentFullName()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast(`${DOC_LABELS[doc]} exported as CSV.`);
   }
 
   /* ---- "Download PDF" uses the browser's print dialog (Save as PDF) ---- */
@@ -1015,6 +1079,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const statBtn = e.target.closest('.rep-stat');
     if (statBtn) {
       openDocument(statBtn.dataset.doc, 'view');
+      return;
+    }
+
+    const docTab = e.target.closest('.rep-doc-tab');
+    if (docTab) {
+      openDocument(docTab.dataset.docTab, 'view');
+      return;
+    }
+
+    const csvBtn = e.target.closest('.doc-csv');
+    if (csvBtn) {
+      exportCsv(csvBtn.dataset.csv);
       return;
     }
 

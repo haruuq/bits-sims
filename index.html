@@ -6,6 +6,7 @@
   <meta name="description" content="BITS-SIMS - Student Information Management System Portal." />
   <title>BITS-SIMS | Portal</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="records.css" />
 </head>
 <body>
 
@@ -595,6 +596,115 @@
           </div>
         </section>
 
+        <!-- PAGE: ACADEMIC RECORDS (Module 3 - logic in records.js, data in data.js) -->
+        <section id="page-records" class="page hidden" aria-label="Academic Records">
+          <div class="dm-panel rec-panel">
+
+            <header class="dm-head rec-head">
+              <div>
+                <h2>Academic Records</h2>
+                <p>Your grades, academic history, and standing. This page updates by itself when grades or attendance are posted.</p>
+              </div>
+              <span class="rec-live" id="recLive" title="Updates automatically"><span class="rec-live-dot" aria-hidden="true"></span>Live &middot; <span id="recLiveTime">just now</span></span>
+            </header>
+
+            <div class="dm-stats">
+              <div class="dash-card dm-stat">
+                <span class="dm-stat-label">CUMULATIVE GWA</span>
+                <span class="dm-stat-value" data-rec-stat="cumulative">0.00</span>
+                <span class="dm-stat-sub" data-rec-stat="cumulativeSub">All completed subjects</span>
+              </div>
+              <div class="dash-card dm-stat">
+                <span class="dm-stat-label">UNITS EARNED</span>
+                <span class="dm-stat-value" data-rec-stat="units">0</span>
+                <span class="dm-stat-sub" data-rec-stat="unitsSub">From passed subjects</span>
+              </div>
+              <button type="button" class="dash-card dm-stat is-action" id="recStandingStat" title="Generate your academic record">
+                <span class="dm-stat-label">ACADEMIC STANDING</span>
+                <span class="dm-stat-value rec-standing-value" data-rec-stat="standing">&mdash;</span>
+                <span class="dm-stat-sub" data-rec-stat="standingSub">Generate academic record &rarr;</span>
+              </button>
+            </div>
+
+            <div class="dm-layout">
+
+              <!-- Grades table -->
+              <section class="dash-card dm-card dm-requirements" id="recGrades">
+                <div class="dm-req-head">
+                  <div class="rec-title-row">
+                    <h3 class="dm-card-title">My grades</h3>
+                    <label class="rec-visually-hidden" for="recTerm">School term</label>
+                    <select id="recTerm" class="dm-select rec-term-select"></select>
+                  </div>
+                  <div class="dm-chips" role="group" aria-label="Filter subjects">
+                    <button type="button" class="rec-chip active" data-rec-filter="all" aria-pressed="true">All (0)</button>
+                    <button type="button" class="rec-chip" data-rec-filter="inprogress" aria-pressed="false">In progress (0)</button>
+                    <button type="button" class="rec-chip" data-rec-filter="completed" aria-pressed="false">Completed (0)</button>
+                  </div>
+                </div>
+
+                <div class="dm-table-wrap">
+                  <table class="dm-table rec-table">
+                    <thead>
+                      <tr><th scope="col">Subject</th><th scope="col" class="rec-num">Units</th><th scope="col" class="rec-num">Final Grade</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col" class="dm-actions-col">Action</th></tr>
+                    </thead>
+                    <tbody id="recTableBody"></tbody>
+                  </table>
+                  <p class="dm-empty hidden" id="recEmpty"></p>
+                </div>
+
+                <div class="rec-foot">
+                  <p class="dm-foot" id="recTermGwa"></p>
+                  <p class="dm-foot" id="recScale"></p>
+                </div>
+              </section>
+
+              <aside class="dm-side">
+
+                <!-- Term history -->
+                <section class="dash-card dm-card rec-history">
+                  <h3 class="dm-card-title">Academic history</h3>
+                  <ul class="rec-history-list" id="recHistory"></ul>
+                </section>
+
+                <!-- Shortcuts to Module 4 -->
+                <section class="dash-card dm-card dm-request rec-quick">
+                  <h3 class="dm-card-title">Generate a report</h3>
+                  <ul class="dm-request-list">
+                    <li class="dm-request-row">
+                      <div><strong>Report Card</strong><small>Latest completed term</small></div>
+                      <button type="button" class="btn-light btn-sm" data-rec-report="report">Generate</button>
+                    </li>
+                    <li class="dm-request-row">
+                      <div><strong>Academic Records</strong><small>All terms and GWA</small></div>
+                      <button type="button" class="btn-light btn-sm" data-rec-report="records">Generate</button>
+                    </li>
+                    <li class="dm-request-row">
+                      <div><strong>Attendance Analytics</strong><small>Current term</small></div>
+                      <button type="button" class="btn-light btn-sm" data-rec-report="attendance">Generate</button>
+                    </li>
+                  </ul>
+                </section>
+
+              </aside>
+            </div>
+          </div>
+
+          <!-- Subject details dialog -->
+          <div id="recModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="recModalTitle">
+            <div class="modal-card">
+              <header class="modal-head">
+                <h3 id="recModalTitle"></h3>
+                <button type="button" class="modal-close" id="recModalClose" aria-label="Close">&times;</button>
+              </header>
+              <div class="modal-body" id="recModalBody"></div>
+              <footer class="modal-foot">
+                <button type="button" class="btn-solid btn-sm" id="recModalDone">Close</button>
+              </footer>
+            </div>
+          </div>
+        </section>
+
         <!-- PAGE: REPORTS & ANALYTICS -->
         <section id="page-reports" class="page hidden" aria-label="Reports and Analytics">
           <div class="rep-panel">
@@ -705,6 +815,13 @@
                 <p class="rep-docs-note">Sample data. <strong>Download PDF</strong> opens your print dialog &mdash; choose &ldquo;Save as PDF&rdquo;.</p>
               </div>
 
+              <div class="rep-doc-tabs" role="tablist" aria-label="Choose a report">
+                <button type="button" class="rep-doc-tab" role="tab" data-doc-tab="report" aria-selected="false">Report Card</button>
+                <button type="button" class="rep-doc-tab" role="tab" data-doc-tab="enrollment" aria-selected="false">Enrollment Summary</button>
+                <button type="button" class="rep-doc-tab" role="tab" data-doc-tab="records" aria-selected="false">Academic Records</button>
+                <button type="button" class="rep-doc-tab" role="tab" data-doc-tab="attendance" aria-selected="false">Attendance Analytics</button>
+              </div>
+
               <div class="doc-grid">
 
                 <article class="doc-card" id="doc-report">
@@ -713,10 +830,16 @@
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
                       Report Card
                     </span>
-                    <button type="button" class="doc-download" data-download="report">
+                    <span class="doc-bar-actions">
+                      <button type="button" class="doc-download" data-download="report">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
                       Download PDF
                     </button>
+                      <button type="button" class="doc-download doc-csv" data-csv="report">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+                        Export CSV
+                      </button>
+                    </span>
                   </header>
                   <div class="doc-paper" id="paper-report"></div>
                   <div class="doc-loading-overlay" aria-hidden="true"><span class="spinner"></span></div>
@@ -728,10 +851,16 @@
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/></svg>
                       Enrollment Summary
                     </span>
-                    <button type="button" class="doc-download" data-download="enrollment">
+                    <span class="doc-bar-actions">
+                      <button type="button" class="doc-download" data-download="enrollment">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
                       Download PDF
                     </button>
+                      <button type="button" class="doc-download doc-csv" data-csv="enrollment">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+                        Export CSV
+                      </button>
+                    </span>
                   </header>
                   <div class="doc-paper" id="paper-enrollment"></div>
                   <div class="doc-loading-overlay" aria-hidden="true"><span class="spinner"></span></div>
@@ -743,10 +872,16 @@
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                       Academic Records
                     </span>
-                    <button type="button" class="doc-download" data-download="records">
+                    <span class="doc-bar-actions">
+                      <button type="button" class="doc-download" data-download="records">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
                       Download PDF
                     </button>
+                      <button type="button" class="doc-download doc-csv" data-csv="records">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+                        Export CSV
+                      </button>
+                    </span>
                   </header>
                   <div class="doc-paper" id="paper-records"></div>
                   <div class="doc-loading-overlay" aria-hidden="true"><span class="spinner"></span></div>
@@ -758,10 +893,16 @@
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h6"/></svg>
                       Custom Report - Attendance Analytics
                     </span>
-                    <button type="button" class="doc-download" data-download="attendance">
+                    <span class="doc-bar-actions">
+                      <button type="button" class="doc-download" data-download="attendance">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
                       Download PDF
                     </button>
+                      <button type="button" class="doc-download doc-csv" data-csv="attendance">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+                        Export CSV
+                      </button>
+                    </span>
                   </header>
                   <div class="doc-paper" id="paper-attendance"></div>
                   <div class="doc-loading-overlay" aria-hidden="true"><span class="spinner"></span></div>
@@ -826,6 +967,8 @@
     </div>
   </div>
 
+  <script src="data.js"></script>
   <script src="script.js"></script>
+  <script src="records.js"></script>
 </body>
 </html>
