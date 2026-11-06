@@ -6,6 +6,7 @@
   <meta name="description" content="BITS-SIMS - Student Information Management System Portal." />
   <title>BITS-SIMS | Portal</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="reports.css" />
 </head>
 <body>
 
@@ -983,6 +984,13 @@
                 <p class="rep-docs-note">Sample data. <strong>Download PDF</strong> opens your print dialog &mdash; choose &ldquo;Save as PDF&rdquo;.</p>
               </div>
 
+              <div class="rep-doc-tabs" role="tablist" aria-label="Choose a report">
+                <button type="button" class="rep-doc-tab" role="tab" data-doc-tab="report" aria-selected="false">Report Card</button>
+                <button type="button" class="rep-doc-tab" role="tab" data-doc-tab="enrollment" aria-selected="false">Enrollment Summary</button>
+                <button type="button" class="rep-doc-tab" role="tab" data-doc-tab="records" aria-selected="false">Academic Records</button>
+                <button type="button" class="rep-doc-tab" role="tab" data-doc-tab="attendance" aria-selected="false">Attendance Analytics</button>
+              </div>
+
               <div class="doc-grid">
 
                 <article class="doc-card" id="doc-report">
@@ -991,10 +999,16 @@
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
                       Report Card
                     </span>
-                    <button type="button" class="doc-download" data-download="report">
+                    <span class="doc-bar-actions">
+                      <button type="button" class="doc-download" data-download="report">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
                       Download PDF
                     </button>
+                      <button type="button" class="doc-download doc-csv" data-csv="report">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+                        Export CSV
+                      </button>
+                    </span>
                   </header>
                   <div class="doc-paper" id="paper-report"></div>
                   <div class="doc-loading-overlay" aria-hidden="true"><span class="spinner"></span></div>
@@ -1006,10 +1020,16 @@
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/></svg>
                       Enrollment Summary
                     </span>
-                    <button type="button" class="doc-download" data-download="enrollment">
+                    <span class="doc-bar-actions">
+                      <button type="button" class="doc-download" data-download="enrollment">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
                       Download PDF
                     </button>
+                      <button type="button" class="doc-download doc-csv" data-csv="enrollment">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+                        Export CSV
+                      </button>
+                    </span>
                   </header>
                   <div class="doc-paper" id="paper-enrollment"></div>
                   <div class="doc-loading-overlay" aria-hidden="true"><span class="spinner"></span></div>
@@ -1021,10 +1041,16 @@
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                       Academic Records
                     </span>
-                    <button type="button" class="doc-download" data-download="records">
+                    <span class="doc-bar-actions">
+                      <button type="button" class="doc-download" data-download="records">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
                       Download PDF
                     </button>
+                      <button type="button" class="doc-download doc-csv" data-csv="records">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+                        Export CSV
+                      </button>
+                    </span>
                   </header>
                   <div class="doc-paper" id="paper-records"></div>
                   <div class="doc-loading-overlay" aria-hidden="true"><span class="spinner"></span></div>
@@ -1036,10 +1062,16 @@
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h6"/></svg>
                       Custom Report - Attendance Analytics
                     </span>
-                    <button type="button" class="doc-download" data-download="attendance">
+                    <span class="doc-bar-actions">
+                      <button type="button" class="doc-download" data-download="attendance">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
                       Download PDF
                     </button>
+                      <button type="button" class="doc-download doc-csv" data-csv="attendance">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+                        Export CSV
+                      </button>
+                    </span>
                   </header>
                   <div class="doc-paper" id="paper-attendance"></div>
                   <div class="doc-loading-overlay" aria-hidden="true"><span class="spinner"></span></div>
@@ -1104,6 +1136,7 @@
     </div>
   </div>
 
+  <script src="data.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
