@@ -29,7 +29,7 @@
 ===================================================== */
 (function () {
   const STORE_KEY = 'bits-sims-academic';
-  const VERSION = 3;
+  const VERSION = 4;
 
   /* ---------- Sample data (1 student) ---------- */
   const SAMPLE = {
@@ -108,7 +108,7 @@
       { id: 'itp225', termId: '2526-2', code: 'ITP225', title: 'IT Ethics and Professional Practice', units: 3, instructor: 'Prof. Anton Nov', grades: { midterm: 1.75, finals: 1.75 }, finalGrade: 1.75, status: 'passed', updated: '2026-05-19' },
 
       // AY 2026-2027, 1st Sem (current - matches the dashboard courses)
-      { id: 'itp3112', termId: '2627-1', code: 'ITP3112R', title: 'System Administration and Maintenance 1', units: 3, section: 'BSIT-3B', instructor: 'Prof. Sam Miguel', schedule: 'Mon 1:00-4:00 PM', grades: { midterm: 1.5, finals: null }, gradeStatus: { midterm: 'posted' }, finalGrade: null, status: 'inprogress', updated: '2026-10-28', attendance: { held: 9, absent: 0, late: 1, excused: 1 } },
+      { id: 'itp3112', termId: '2627-1', code: 'ITP3112R', title: 'System Administration and Maintenance 1', units: 3, section: 'BSIT-3B', instructor: 'Prof. Sam Miguel', schedule: 'Mon 1:00-4:00 PM', grades: { midterm: 1.5, finals: null }, gradeStatus: { midterm: 'posted' }, finalGrade: null, status: 'inprogress', updated: '2026-10-28', attendance: { held: 9, absent: 0, late: 1, excused: 0 } },
       { id: 'gen-rp', termId: '2627-1', code: 'GEN-RP', title: 'Readings in Philippine History', units: 3, section: 'BSIT-3B', instructor: 'Prof. Anton Nov', schedule: 'Tue 9:00 AM-12:00 PM', grades: { midterm: 1.5, finals: null }, gradeStatus: { midterm: 'posted' }, finalGrade: null, status: 'inprogress', updated: '2026-09-15', attendance: { held: 5, absent: 0, late: 0, excused: 0 } },
       { id: 'itp3111', termId: '2627-1', code: 'ITP3111R', title: 'Network Management 2', units: 3, section: 'BSIT-3B', instructor: 'Prof. Sam Miguel', schedule: 'Wed 1:00-4:00 PM', grades: { midterm: 1.75, finals: null }, gradeStatus: { midterm: 'posted' }, finalGrade: null, status: 'inprogress', updated: '2026-10-29', attendance: { held: 8, absent: 1, late: 1, excused: 0 } },
       { id: 'ita312', termId: '2627-1', code: 'ITA312R', title: 'Platform Technologies 3 (Cloud Computing)', units: 3, section: 'BSIT-3B', instructor: 'Prof. Summer Noff', schedule: 'Thu 9:00 AM-12:00 PM', grades: { midterm: 1.75, finals: null }, gradeStatus: { midterm: 'submitted' }, finalGrade: null, status: 'inprogress', updated: '2026-10-30', attendance: { held: 7, absent: 0, late: 1, excused: 0 } }
