@@ -361,6 +361,284 @@
           </div>
         </section>
 
+        <!-- PAGE: ACADEMIC RECORDS -->
+        <section id="page-records" class="page hidden" aria-label="Academic Records">
+          <div class="rec-panel">
+
+            <header class="adm-head">
+              <div>
+                <h2>Academic Records</h2>
+                <p>Your grades and units for each term. Grades appear here once your instructors post them.</p>
+              </div>
+            </header>
+
+            <div class="rec-top">
+              <section class="dash-card rec-student">
+                <div class="adm-avatar">
+                  <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="Profile picture" data-avatar />
+                </div>
+                <h3 class="adm-applicant-name" data-full-name>Dawson James Garcia</h3>
+                <p class="rec-meta" data-rec="program"></p>
+                <p class="rec-meta" data-rec="idLine"></p>
+              </section>
+
+              <section class="dash-card rec-stat">
+                <span class="rec-label">TERM GWA</span>
+                <span class="rec-value" id="recTermGwa">&mdash;</span>
+                <span class="rec-sub" id="recTermGwaSub"></span>
+              </section>
+
+              <section class="dash-card rec-stat">
+                <span class="rec-label">UNITS THIS TERM</span>
+                <span class="rec-value" id="recUnits">0</span>
+                <span class="rec-sub" id="recUnitsSub"></span>
+              </section>
+
+              <section class="dash-card rec-stat is-blue">
+                <span class="rec-label">CUMULATIVE GWA</span>
+                <span class="rec-value" id="recCumulative">&mdash;</span>
+                <span class="rec-sub">Across all posted terms</span>
+              </section>
+            </div>
+
+            <div class="rec-bottom">
+              <section class="dash-card dm-card rec-grades">
+                <h3 class="adm-sec-title">Grades by term</h3>
+                <div class="dm-chips" id="recTerms" role="group" aria-label="Choose a term"></div>
+
+                <div class="dm-table-wrap">
+                  <table class="dm-table rec-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Course code</th>
+                        <th scope="col">Course title</th>
+                        <th scope="col" class="num">Units</th>
+                        <th scope="col" class="num">Grade</th>
+                        <th scope="col">Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody id="recBody"></tbody>
+                    <tfoot id="recFoot"></tfoot>
+                  </table>
+                </div>
+                <p class="dm-foot" id="recNote"></p>
+              </section>
+
+              <aside class="rec-side">
+                <button type="button" class="dash-card dm-card rec-request" id="recRequest"></button>
+
+                <section class="dash-card dm-card rec-scale">
+                  <h3 class="adm-sec-title">Grading scale</h3>
+                  <ul class="rec-scale-list">
+                    <li><span>1.00</span><strong>Highest</strong></li>
+                    <li><span>3.00</span><strong>Passing</strong></li>
+                    <li><span>5.00</span><strong>Failed</strong></li>
+                  </ul>
+                  <p class="dm-foot">Lower numbers are better.</p>
+                </section>
+              </aside>
+            </div>
+          </div>
+        </section>
+
+        <!-- PAGE: ATTENDANCE -->
+        <section id="page-attendance" class="page hidden" aria-label="Attendance">
+          <div class="att-panel">
+            <h2 class="sr-only">Attendance</h2>
+
+            <section class="dash-card dm-card att-card">
+              <div class="att-table-wrap">
+                <table class="att-table">
+                  <thead>
+                    <tr>
+                      <th scope="col" aria-sort="none"><button type="button" class="att-sort" data-sort="title">Courses <span class="att-arrow" aria-hidden="true"></span></button></th>
+                      <th scope="col" aria-sort="none"><button type="button" class="att-sort" data-sort="last" title="Date of the most recent recorded session">Attendance <span class="att-arrow" aria-hidden="true"></span></button></th>
+                      <th scope="col" aria-sort="none"><button type="button" class="att-sort" data-sort="held">Taken Sessions <span class="att-arrow" aria-hidden="true"></span></button></th>
+                      <th scope="col" aria-sort="none"><button type="button" class="att-sort" data-sort="points">Points over taken sessions <span class="att-arrow" aria-hidden="true"></span></button></th>
+                      <th scope="col" aria-sort="none"><button type="button" class="att-sort" data-sort="pct">Percentage over taken sessions <span class="att-arrow" aria-hidden="true"></span></button></th>
+                    </tr>
+                  </thead>
+                  <tbody id="attBody"></tbody>
+                  <tfoot id="attFoot"></tfoot>
+                </table>
+              </div>
+              <p class="dm-foot">Select a course to see its session-by-session record. Each attended session earns a point, even when you arrive late; an absence earns none.</p>
+            </section>
+          </div>
+        </section>
+
+        <!-- PAGE: ADMISSIONS & ENROLLMENT -->
+        <section id="page-admissions" class="page hidden" aria-label="Admissions and Enrollment">
+          <div class="adm-panel">
+
+            <div class="adm-tabs" role="tablist" aria-label="Admissions sections">
+              <button type="button" class="adm-tab active" role="tab" id="admTab-overview" aria-selected="true" aria-controls="adm-overview" data-adm-tab="overview">Overview</button>
+              <button type="button" class="adm-tab" role="tab" id="admTab-new" aria-selected="false" aria-controls="adm-new" data-adm-tab="new" tabindex="-1">New application</button>
+              <button type="button" class="adm-tab" role="tab" id="admTab-status" aria-selected="false" aria-controls="adm-status" data-adm-tab="status" tabindex="-1">Application status</button>
+              <button type="button" class="adm-tab" role="tab" id="admTab-enroll" aria-selected="false" aria-controls="adm-enroll" data-adm-tab="enroll" tabindex="-1">Enrollment</button>
+            </div>
+
+            <!-- TAB: OVERVIEW -->
+            <div id="adm-overview" class="adm-view" role="tabpanel" aria-labelledby="admTab-overview">
+              <header class="adm-head">
+                <div>
+                  <h2>Admissions &amp; Enrollment</h2>
+                  <p>Track your applications, see decisions, and continue to enrollment once you are accepted.</p>
+                </div>
+                <button type="button" class="btn-solid" data-adm-go="new">+ New application</button>
+              </header>
+
+              <div class="adm-top">
+                <section class="dash-card dm-card adm-applicant">
+                  <div class="adm-avatar">
+                    <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="Profile picture" data-avatar />
+                  </div>
+                  <h3 class="adm-applicant-name" data-full-name>Dawson James Garcia</h3>
+                  <p class="adm-applicant-id">Student ID <span data-adm="studentId"></span></p>
+                </section>
+
+                <section class="dash-card dm-card adm-current" id="admCurrent"></section>
+
+                <button type="button" class="dash-card dm-card adm-cta" id="admCta"></button>
+              </div>
+
+              <section class="dash-card dm-card adm-progress">
+                <h3 class="adm-sec-title">Application progress</h3>
+                <ol class="adm-steps" id="admSteps"></ol>
+              </section>
+
+              <div class="adm-bottom">
+                <section class="dash-card dm-card adm-apps">
+                  <h3 class="adm-sec-title">All applications</h3>
+                  <div class="dm-table-wrap">
+                    <table class="dm-table adm-table">
+                      <thead>
+                        <tr><th scope="col">Application no.</th><th scope="col">Program</th><th scope="col">Type</th><th scope="col">Submitted</th><th scope="col">Status</th></tr>
+                      </thead>
+                      <tbody id="admAppsBody"></tbody>
+                    </table>
+                  </div>
+                  <p class="dm-foot">Select an application to see it in the summary above.</p>
+                </section>
+
+                <aside class="dash-card dm-card adm-legend">
+                  <h3 class="adm-sec-title">What each status means</h3>
+                  <ul class="adm-legend-list" id="admLegend"></ul>
+                </aside>
+              </div>
+            </div>
+
+            <!-- TAB: NEW APPLICATION -->
+            <div id="adm-new" class="adm-view hidden" role="tabpanel" aria-labelledby="admTab-new">
+              <header class="adm-head">
+                <div>
+                  <h2>New admission application</h2>
+                  <p>Tell us what you are applying for. You can track the result from the Admissions overview.</p>
+                </div>
+              </header>
+
+              <div class="adm-new-layout">
+                <form id="admForm" class="dash-card dm-card adm-form" novalidate>
+                  <h3 class="adm-sec-title">Applicant</h3>
+                  <div class="adm-applicant-row">
+                    <span class="adm-mini-avatar"><img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="" data-avatar /></span>
+                    <div class="adm-applicant-text">
+                      <strong data-full-name>Dawson James Garcia</strong>
+                      <small id="admFormEmail"></small>
+                    </div>
+                    <span class="adm-filled">Filled in from your profile</span>
+                  </div>
+
+                  <h3 class="adm-sec-title">Admission type</h3>
+                  <div class="adm-types" role="radiogroup" aria-label="Admission type">
+                    <label class="adm-type">
+                      <input type="radio" name="admType" value="freshman" checked />
+                      <span class="adm-type-body"><strong>Freshman</strong><small>First-time college student</small></span>
+                    </label>
+                    <label class="adm-type">
+                      <input type="radio" name="admType" value="transferee" />
+                      <span class="adm-type-body"><strong>Transferee</strong><small>Coming from another school</small></span>
+                    </label>
+                    <label class="adm-type">
+                      <input type="radio" name="admType" value="returnee" />
+                      <span class="adm-type-body"><strong>Returnee</strong><small>Returning after a break</small></span>
+                    </label>
+                  </div>
+
+                  <h3 class="adm-sec-title">Program and term</h3>
+                  <div class="set-grid-2">
+                    <div class="set-field">
+                      <label for="admProgram">Program applying for</label>
+                      <select id="admProgram" class="dm-select">
+                        <option value="">Select a program</option>
+                        <option>BS Computer Science</option>
+                        <option>BS Information Technology</option>
+                        <option>BS Nursing</option>
+                        <option>BS Business Administration</option>
+                        <option>BS Accountancy</option>
+                        <option>BS Psychology</option>
+                      </select>
+                      <small class="set-error" id="admProgramError"></small>
+                    </div>
+                    <div class="set-field">
+                      <label for="admTerm">Intended academic term</label>
+                      <select id="admTerm" class="dm-select">
+                        <option>1st Semester, AY 2027–2028</option>
+                        <option>2nd Semester, AY 2026–2027</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <label class="check-row adm-confirm">
+                    <input type="checkbox" id="admConfirm" />
+                    <span>I confirm that the information in this application is true and complete.</span>
+                  </label>
+                  <small class="set-error" id="admConfirmError"></small>
+
+                  <div class="set-actions">
+                    <button type="submit" class="btn-solid">Submit application</button>
+                    <button type="button" class="btn-light" id="admCancel">Cancel</button>
+                  </div>
+                </form>
+
+                <aside class="dash-card dm-card adm-summary">
+                  <h3 class="adm-sec-title">Application summary</h3>
+                  <dl class="set-info adm-kv">
+                    <div><dt>Type</dt><dd id="admSumType"></dd></div>
+                    <div><dt>Program</dt><dd id="admSumProgram"></dd></div>
+                    <div><dt>Term</dt><dd id="admSumTerm"></dd></div>
+                    <div><dt>Application date</dt><dd id="admSumDate"></dd></div>
+                    <div><dt>Application no.</dt><dd>Assigned on submit</dd></div>
+                    <div><dt>Status after submit</dt><dd><span class="dm-status warn">Pending</span></dd></div>
+                  </dl>
+                </aside>
+              </div>
+            </div>
+
+            <!-- TAB: APPLICATION STATUS (rendered by script) -->
+            <div id="adm-status" class="adm-view hidden" role="tabpanel" aria-labelledby="admTab-status"></div>
+
+            <!-- TAB: ENROLLMENT (rendered by script) -->
+            <div id="adm-enroll" class="adm-view hidden" role="tabpanel" aria-labelledby="admTab-enroll"></div>
+
+          </div>
+
+          <!-- Confirm dialog -->
+          <div id="confirmModal" class="modal hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMsg">
+            <div class="modal-card">
+              <header class="modal-head">
+                <h3 id="confirmTitle"></h3>
+                <button type="button" class="modal-close" id="confirmClose" aria-label="Close">&times;</button>
+              </header>
+              <div class="modal-body"><p id="confirmMsg" class="dm-modal-note"></p></div>
+              <footer class="modal-foot">
+                <button type="button" class="btn-light btn-sm" id="confirmCancel">Cancel</button>
+                <button type="button" class="btn-solid btn-sm" id="confirmOk">Confirm</button>
+              </footer>
+            </div>
+          </div>
+        </section>
+
         <!-- PAGE: DOCUMENT MANAGEMENT -->
         <section id="page-documents" class="page hidden" aria-label="Document Management">
           <div class="dm-panel">
