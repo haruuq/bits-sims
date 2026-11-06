@@ -123,7 +123,7 @@
     const X = window.SIMSAdminX, cur = NAV.find((n) => n[0] === page) || NAV.find((n) => n[0] === (X.parent[page] || 'home'));
     const logo = document.querySelector('.nav-logo');
     root.innerHTML = `<header class="top-nav"><div class="nav-brand">${logo ? `<img class="nav-logo" src="${esc(logo.getAttribute('src'))}" alt="">` : ''}<span class="nav-title">BITS-SIMS</span></div>
-      <div class="nav-user-area"><span class="nav-page-label">${esc(cur[0] === 'home' ? 'Dashboard' : cur[1])}</span><span class="nav-divider"></span><span class="ad-ra" title="${esc(user)}">RA</span></div></header>
+      <div class="nav-user-area"><span class="nav-page-label">${esc(cur[0] === 'home' ? 'Dashboard' : cur[1])}</span><span class="nav-divider"></span><span class="ad-ra" title="${esc(user)}">${esc(X.initials())}</span></div></header>
       <div class="app-layout"><nav class="sidebar"><ul class="sidebar-menu">${NAV.map((n) => `<li><a href="#" class="sidebar-item ${n[0] === cur[0] ? 'active' : ''}" data-go="${n[0]}">${icon(n[0])}<span>${esc(n[1])}</span></a></li>`).join('')}
       <li><a href="#" class="sidebar-item logout-link" data-go="logout">${icon('logout')}<span>Log Out</span></a></li></ul></nav>
       <main class="dashboard-main"><div class="dashboard-panel ad-body">${pages[page]()}</div></main></div>`;
@@ -132,8 +132,10 @@
 
   /* ---------- Actions ---------- */
   function act(t) {
+    const need = window.SIMSAdminX.needs(t);
+    if (need && !SIMSAuth.can(need)) { log('Access denied: ' + need); return alert('Access denied. Your role does not include ' + need + '.'); }
     const go = t.dataset.x ? null : t.closest('[data-go]');
-    if (go) { if (go.dataset.go === 'logout') return location.reload(); page = go.dataset.go; sel = null; return render(); }
+    if (go) { if (go.dataset.go === 'logout') { SIMSAuth.logout(); return location.reload(); } page = go.dataset.go; sel = null; return render(); }
     const row = t.closest('[data-sel]');
     if (row) { sel = row.dataset.sel; return render(); }
 
@@ -167,7 +169,7 @@
     render();
   }
 
-  window.SIMSAdminX = { pages, NAV, rd, wr, esc, badge, log, today, K, parent: {}, act: () => false, go: (p) => { page = p; sel = null; render(); } };
+  window.SIMSAdminX = { pages, NAV, rd, wr, esc, badge, log, today, K, parent: {}, act: () => false, needs: () => null, initials: () => 'RA', go: (p) => { page = p; sel = null; render(); } };
   window.SIMSAdmin = {
     isAdminUser: (u) => /^(registrar|admin)/i.test(u),
     open(name) {

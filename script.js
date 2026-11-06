@@ -73,21 +73,15 @@ document.addEventListener('DOMContentLoaded', () => {
   /* =====================================================
      LOGIN / LOGOUT
   ===================================================== */
-  loginForm.addEventListener('submit', (e) => {
+  loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-
-    const username = $('#username').value.trim();
-    const password = $('#password').value;
-
-    if (!username || !password) {
-      alert('Please fill in both Username/Email and Password.');
-      return;
-    }
+    const res = await SIMSAuth.attempt(); // Module 1: lockout, MFA, password rules, roles
+    if (!res) return;
 
     loginView.classList.add('hidden');
-    if (window.SIMSAdmin && SIMSAdmin.isAdminUser(username)) {
+    if (res.role !== 'STUDENT' && window.SIMSAdmin) {
       persistProfile(); persistDocs(); persistAdm(); // make sure the admin side sees the student's stores
-      SIMSAdmin.open(username);
+      SIMSAdmin.open(res.username);
       return;
     }
     dashboardView.classList.remove('hidden');
@@ -97,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
     logoutBtn.addEventListener('click', (e) => {
       e.preventDefault();
       loginForm.reset();
+      if (window.SIMSAuth) SIMSAuth.logout();
       dashboardView.classList.add('hidden');
       loginView.classList.remove('hidden');
     });

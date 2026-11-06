@@ -38,3 +38,18 @@ button.ad-card{cursor:pointer}.ad-card small{display:block;text-transform:upperc
 .ad-body input:not([type=checkbox]),.ad-body select{padding:.6rem;border:0;border-radius:.5rem;background:#e4ecf8;font:inherit;font-size:.8rem}
 .ad-filters{display:flex;gap:.7rem;flex-wrap:wrap;margin:.8rem 0;align-items:center}
 @media(max-width:900px){.ad-row,.ad-row2,.ad-split{grid-template-columns:1fr}}
+
+/* Module 1 - login add-ons and dialogs */
+.au-remember{display:flex;gap:.5rem;align-items:center;font-size:.85rem;margin:.2rem 0 .6rem;color:#273449}
+.au-msg{min-height:1.2rem;margin:.2rem 0 .6rem;font-size:.82rem;color:#b3261e}.au-msg.info{color:#3767B1}
+.au-demo{margin-top:1rem;font-size:.78rem;color:#273449}.au-demo summary{cursor:pointer;font-weight:700;color:#3767B1}
+.au-demo table{margin:.5rem 0;border-collapse:collapse;width:100%}.au-demo td{padding:.15rem .4rem;border-bottom:1px solid #dde5ef}
+.au-ov{position:fixed;inset:0;background:rgba(24,49,83,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem}
+.au-box{background:#fff;border-radius:.8rem;padding:1.5rem;width:100%;max-width:400px;box-shadow:0 12px 32px rgba(0,0,0,.3);color:#273449}
+.au-box h2{margin:0 0 .5rem;color:#183153;font-size:1.2rem}.au-box p{font-size:.85rem;margin:.3rem 0 .8rem}
+.au-f{display:flex;flex-direction:column;gap:.25rem;font-size:.8rem;font-weight:700;margin-bottom:.7rem}
+.au-f input{padding:.6rem;border:1px solid #cdd6e2;border-radius:.45rem;font:inherit;font-weight:400}
+.au-note{min-height:1.1rem;color:#b3261e;font-size:.8rem}.au-note.ok{color:#1e7a46}
+.au-row{display:flex;gap:.8rem;align-items:center}.au-row .submit-btn{width:auto;padding:.6rem 1.2rem}
+.au-link{background:none;border:0;color:#3767B1;font-weight:700;cursor:pointer;font:inherit}
+.au-demo-code{display:block;background:#e4ecf8;padding:.5rem;border-radius:.4rem;margin:.4rem 0;text-align:center;letter-spacing:.1em}
