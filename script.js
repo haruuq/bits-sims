@@ -85,6 +85,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     loginView.classList.add('hidden');
+    if (window.SIMSAdmin && SIMSAdmin.isAdminUser(username)) {
+      persistProfile(); persistDocs(); persistAdm(); // make sure the admin side sees the student's stores
+      SIMSAdmin.open(username);
+      return;
+    }
     dashboardView.classList.remove('hidden');
   });
 
@@ -461,9 +466,24 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // Official name changes go to the registrar as a correction request instead of applying directly
+    const COR_KEY = 'bits-sims-corrections';
+    const nameChanges = [['firstName', 'First name', firstName], ['lastName', 'Last name', lastName]].filter((c) => c[2] !== profile[c[0]]);
+    if (nameChanges.length) {
+      const reason = window.prompt('Your name is an official record, so the registrar must approve this change.\nReason (e.g. marriage certificate):', '');
+      if (reason === null) { fillGeneral(); return; }
+      let list = [];
+      try { list = JSON.parse(localStorage.getItem(COR_KEY)) || []; } catch (err) { list = []; }
+      nameChanges.forEach((c) => list.push({
+        id: 'COR-' + Date.now() + '-' + c[0], student: '2024-12345', field: c[0], label: c[1],
+        old: profile[c[0]], next: c[2], reason: reason.trim(), date: isoToday(), status: 'pending', remarks: ''
+      }));
+      try { localStorage.setItem(COR_KEY, JSON.stringify(list)); } catch (err) { /* storage unavailable */ }
+    }
+
     profile = Object.assign({}, profile, {
-      firstName,
-      lastName,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
       email,
       emailVisibility: $('#emailVisibility').value,
       city: $('#city').value.trim(),
@@ -473,7 +493,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     persistProfile();
     setNames();
-    showToast('Profile details saved.');
+    showToast(nameChanges.length ? 'Details saved. Your name change was sent to the registrar for approval.' : 'Profile details saved.', nameChanges.length ? 'info' : 'success');
+    if (nameChanges.length) fillGeneral();
   });
 
   $('#generalCancel').addEventListener('click', () => {
@@ -2785,4 +2806,15 @@ document.addEventListener('DOMContentLoaded', () => {
   buildAcademicSummary();
   applyProfile();
   openTab('general');
+
+  /* =====================================================
+     ADMIN -> STUDENT SYNC
+     When the registrar (another tab, or a previous session) changes a shared
+     store, reload it here and refresh the screens that show it.
+  ===================================================== */
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORE_KEY) { profile = loadProfile(); setNames(); fillGeneral(); showToast('Your profile was updated by the registrar.', 'info'); }
+    if (e.key === DM_KEY) { docs = loadDocs(); renderDocuments(); renderRequests(); renderRecRequest(); showToast('A document status was updated.', 'info'); }
+    if (e.key === ADM_KEY) { adm = loadAdm(); renderAdmOverview(); renderAdmStatus(); showToast('Your admission status was updated.', 'info'); }
+  });
 });
