@@ -1,0 +1,1272 @@
+/* =========================================================
+   BITS-SIMS - STAFF PORTALS
+   ICT Services (admin), Education Technology Services, Faculty
+   Loaded before script.js. Exposes window.SIMSStaff:
+     isStaffUser(username)            -> true if it matches a staff account
+     authenticate(username, password) -> { ok, account, message }
+     open(account)                    -> shows that account's portal
+   All data is sample data kept in localStorage (prototype only).
+   ========================================================= */
+(function () {
+  'use strict';
+
+  /* ---------- tiny helpers ---------- */
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const esc = (v) => String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const pad = (n) => String(n).padStart(2, '0');
+  const isoDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const nowStamp = () => { const d = new Date(); return `${isoDate(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  const toMin = (t) => { const [h, m] = String(t || '0:0').split(':').map(Number); return h * 60 + m; };
+  const fmtTime = (t) => { if (!t) return '\u2014'; const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${pad(m)} ${h >= 12 ? 'PM' : 'AM'}`; };
+  const fmtDate = (iso) => { if (!iso) return '\u2014'; const [y, m, d] = iso.slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
+  const fmtDateLong = (iso) => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }); };
+  const fmtBytes = (b) => b > 1073741824 ? `${(b / 1073741824).toFixed(2)} GB` : `${Math.round(b / 1048576)} MB`;
+  const rnd = (seed) => { const x = Math.sin(seed * 9999.37) * 10000; return x - Math.floor(x); };
+
+  // Prototype-only hash (NOT secure). A real build must use Argon2id / bcrypt on the server.
+  const hash = (str) => {
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (let i = 0, ch; i < str.length; i++) {
+      ch = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+  };
+
+  const K = {
+    users: 'bits-sims-staff-users', perms: 'bits-sims-staff-perms', audit: 'bits-sims-staff-audit',
+    backups: 'bits-sims-staff-backups', events: 'bits-sims-staff-events', classes: 'bits-sims-staff-classes',
+    fac: 'bits-sims-staff-faculty', policy: 'bits-sims-staff-policy', alerts: 'bits-sims-staff-alertcfg',
+    reports: 'bits-sims-staff-reports', pw: 'bits-sims-staff-pw', locks: 'bits-sims-staff-locks'
+  };
+  const load = (key, seed) => {
+    try { const v = JSON.parse(localStorage.getItem(key)); if (v !== null && v !== undefined) return v; } catch (e) { /* ignore */ }
+    return seed();
+  };
+  const persist = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage unavailable */ } };
+
+  /* =====================================================
+     STAFF ACCOUNTS (the logins)
+     ICT Admin : ict.admin      / Ict@2026
+     EdTech    : edtech.staff   / Edtech@2026
+     Faculty   : faculty.reyes  / Faculty@2026
+     (the work email also works as the username)
+  ===================================================== */
+  const ACCOUNTS = [
+    { username: 'ict.admin', email: 'ict.admin@bits.edu.ph', password: 'Ict@2026', name: 'Marco Villanueva', role: 'ICT_ADMIN', title: 'System Administrator', dept: 'ICT Services', employeeNo: 'EMP-0012', hired: '2019-06-03', contact: '0917 555 0112' },
+    { username: 'edtech.staff', email: 'edtech@bits.edu.ph', password: 'Edtech@2026', name: 'Lara Mendoza', role: 'EDTECH', title: 'Learning Systems Specialist', dept: 'Education Technology Services', employeeNo: 'EMP-0027', hired: '2021-01-18', contact: '0917 555 0127' },
+    { username: 'faculty.reyes', email: 'f.reyes@bits.edu.ph', password: 'Faculty@2026', name: 'Daniel Reyes', role: 'FACULTY', title: 'Instructor, BSIT', dept: 'Information Technology', employeeNo: 'EMP-0143', hired: '2020-08-10', contact: '0917 555 0143' }
+  ];
+  ACCOUNTS.forEach((a) => { a.pwHash = hash(a.password); delete a.password; });
+
+  const ROLE_LABEL = {
+    ICT_ADMIN: 'ICT Services', EDTECH: 'Education Technology Services', DEPT_HEAD: 'Department Head',
+    FACULTY: 'Faculty Member', REGISTRAR: 'Registrar', STUDENT: 'Student'
+  };
+
+  // What each portal can do (the access matrix in the planning reference, section 8.2)
+  const CAPS = {
+    ICT_ADMIN: ['accounts.manage', 'roles.manage', 'audit.full', 'backup.manage', 'monitor.manage', 'reports.all', 'config'],
+    EDTECH: ['accounts.support', 'roles.view', 'audit.view', 'backup.view', 'monitor.manage', 'classes.edit', 'reports.ops'],
+    FACULTY: ['classes.assigned', 'attendance.encode', 'grades.encode', 'reports.class']
+  };
+
+  const NAV = {
+    ICT_ADMIN: [
+      ['dashboard', 'Dashboard', 'home'], ['accounts', 'User Accounts', 'users'], ['roles', 'Roles & Permissions', 'shield'],
+      ['audit', 'Audit Trails', 'list'], ['backups', 'Backup Management', 'db'], ['monitoring', 'System Monitoring', 'pulse'],
+      ['reports', 'Reports', 'doc'], ['settings', 'System Settings', 'gear'], ['account', 'My Account', 'user']
+    ],
+    EDTECH: [
+      ['dashboard', 'Dashboard', 'home'], ['accounts', 'Account Support', 'users'], ['classes', 'Classes & Schedules', 'cal'],
+      ['monitoring', 'System Monitoring', 'pulse'], ['roles', 'Roles (view only)', 'shield'], ['audit', 'Audit Trails', 'list'],
+      ['backups', 'Backup Status', 'db'], ['reports', 'Reports', 'doc'], ['account', 'My Account', 'user']
+    ],
+    FACULTY: [
+      ['dashboard', 'Dashboard', 'home'], ['classes', 'My Classes', 'cal'], ['attendance', 'Attendance', 'check'],
+      ['grades', 'Grade Management', 'star'], ['reports', 'Reports', 'doc'], ['account', 'My Account', 'user']
+    ]
+  };
+
+  const ICONS = {
+    home: '<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>',
+    users: '<circle cx="9" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1z"/><path d="M17 4a4 4 0 0 1 0 7M22 21v-1a5 5 0 0 0-3-4.6"/>',
+    shield: '<path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z"/><path d="M9 12l2 2 4-4"/>',
+    list: '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
+    db: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
+    pulse: '<path d="M2 12h5l3-8 4 16 3-8h5"/>',
+    doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>',
+    user: '<circle cx="12" cy="7" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1z"/>',
+    cal: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    check: '<rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 2h6v4H9z"/><path d="M9 14l2 2 4-4"/>',
+    star: '<path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
+    out: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>'
+  };
+  const icon = (n) => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]}</svg>`;
+
+  /* =====================================================
+     SEED DATA
+  ===================================================== */
+  const PERMISSIONS = [
+    ['STUDENT_VIEW', 'Student Records'], ['STUDENT_CREATE', 'Student Records'], ['STUDENT_EDIT', 'Student Records'],
+    ['STUDENT_DEACTIVATE', 'Student Records'], ['STUDENT_APPROVE', 'Student Records'],
+    ['ENROLLMENT_VIEW', 'Enrollment'], ['ENROLLMENT_CREATE', 'Enrollment'], ['ENROLLMENT_EDIT', 'Enrollment'], ['ENROLLMENT_APPROVE', 'Enrollment'],
+    ['ATTENDANCE_VIEW', 'Attendance'], ['ATTENDANCE_ENCODE', 'Attendance'], ['ATTENDANCE_EDIT', 'Attendance'],
+    ['GRADE_VIEW', 'Grades'], ['GRADE_ENCODE', 'Grades'], ['GRADE_EDIT', 'Grades'], ['GRADE_APPROVE', 'Grades'], ['GRADE_POST', 'Grades'],
+    ['REPORT_GENERATE', 'Reports'], ['REPORT_EXPORT', 'Reports'],
+    ['USER_MANAGE', 'System'], ['ROLE_MANAGE', 'System'], ['AUDIT_VIEW', 'System'], ['BACKUP_MANAGE', 'System'], ['SYSTEM_CONFIGURE', 'System']
+  ];
+  const ROLE_ORDER = ['ICT_ADMIN', 'EDTECH', 'DEPT_HEAD', 'FACULTY', 'REGISTRAR', 'STUDENT'];
+  const seedPerms = () => ({
+    ICT_ADMIN: ['USER_MANAGE', 'ROLE_MANAGE', 'AUDIT_VIEW', 'BACKUP_MANAGE', 'SYSTEM_CONFIGURE', 'REPORT_GENERATE', 'REPORT_EXPORT'],
+    EDTECH: ['AUDIT_VIEW', 'REPORT_GENERATE', 'ENROLLMENT_VIEW'],
+    DEPT_HEAD: ['STUDENT_VIEW', 'ENROLLMENT_VIEW', 'ENROLLMENT_EDIT', 'ATTENDANCE_VIEW', 'GRADE_VIEW', 'GRADE_APPROVE', 'REPORT_GENERATE', 'REPORT_EXPORT'],
+    FACULTY: ['ENROLLMENT_VIEW', 'ATTENDANCE_VIEW', 'ATTENDANCE_ENCODE', 'ATTENDANCE_EDIT', 'GRADE_VIEW', 'GRADE_ENCODE', 'GRADE_EDIT', 'REPORT_GENERATE'],
+    REGISTRAR: ['STUDENT_VIEW', 'STUDENT_CREATE', 'STUDENT_EDIT', 'STUDENT_DEACTIVATE', 'STUDENT_APPROVE', 'ENROLLMENT_VIEW', 'ENROLLMENT_CREATE', 'ENROLLMENT_EDIT', 'ENROLLMENT_APPROVE', 'ATTENDANCE_VIEW', 'GRADE_VIEW', 'GRADE_APPROVE', 'GRADE_POST', 'REPORT_GENERATE', 'REPORT_EXPORT'],
+    STUDENT: ['STUDENT_VIEW', 'ENROLLMENT_VIEW', 'ATTENDANCE_VIEW', 'GRADE_VIEW']
+  });
+
+  const mkUser = (id, username, name, email, role, status, mfa, failed, last, created) =>
+    ({ id, username, name, email, role, status, mfa, failed, lockoutUntil: '', lastLogin: last, mustChange: status === 'Pending Activation', created: created || '2026-06-01' });
+  const seedUsers = () => [
+    mkUser(1, 'ict.admin', 'Marco Villanueva', 'ict.admin@bits.edu.ph', 'ICT_ADMIN', 'Active', true, 0, '2026-11-09 08:14', '2019-06-03'),
+    mkUser(2, 'edtech.staff', 'Lara Mendoza', 'edtech@bits.edu.ph', 'EDTECH', 'Active', true, 0, '2026-11-09 07:50', '2021-01-18'),
+    mkUser(3, 'faculty.reyes', 'Daniel Reyes', 'f.reyes@bits.edu.ph', 'FACULTY', 'Active', false, 0, '2026-11-09 07:02', '2020-08-10'),
+    mkUser(4, 'registrar.santos', 'Elena Santos', 'e.santos@bits.edu.ph', 'REGISTRAR', 'Active', true, 0, '2026-11-08 16:40', '2018-03-12'),
+    mkUser(5, 'dept.cruz', 'Dr. Ramon Cruz', 'r.cruz@bits.edu.ph', 'DEPT_HEAD', 'Active', false, 1, '2026-11-07 13:22', '2017-07-01'),
+    mkUser(6, 'faculty.tan', 'Grace Tan', 'g.tan@bits.edu.ph', 'FACULTY', 'Active', false, 0, '2026-11-08 09:31', '2022-08-15'),
+    mkUser(7, 'faculty.lim', 'Paolo Lim', 'p.lim@bits.edu.ph', 'FACULTY', 'Locked', false, 5, '2026-11-04 10:05', '2023-01-09'),
+    mkUser(8, 'faculty.ocampo', 'Bea Ocampo', 'b.ocampo@bits.edu.ph', 'FACULTY', 'Pending Activation', false, 0, '', '2026-11-05'),
+    mkUser(9, 'registrar.dizon', 'Nico Dizon', 'n.dizon@bits.edu.ph', 'REGISTRAR', 'Suspended', false, 0, '2026-09-30 15:12', '2024-02-20'),
+    mkUser(10, 'dawson.garcia', 'Dawson James Garcia', 'dawson.garcia@bits.edu.ph', 'STUDENT', 'Active', false, 0, '2026-11-09 06:48', '2024-07-22')
+  ];
+
+  const seedAudit = () => {
+    const a = (ts, user, mod, ent, rec, act, desc, status, ip, prev, next) => ({ id: 0, ts, user, mod, ent, rec, act, desc, status: status || 'Success', ip: ip || '10.10.1.24', prev: prev || '', next: next || '' });
+    const list = [
+      a('2026-11-09 08:14', 'ict.admin', 'Authentication', 'Users', 'U-1', 'LOGIN', 'Successful login', 'Success', '10.10.1.5'),
+      a('2026-11-09 07:50', 'edtech.staff', 'Authentication', 'Users', 'U-2', 'LOGIN', 'Successful login', 'Success', '10.10.2.17'),
+      a('2026-11-09 07:02', 'faculty.reyes', 'Authentication', 'Users', 'U-3', 'LOGIN', 'Successful login', 'Success', '10.10.3.40'),
+      a('2026-11-08 17:05', 'faculty.reyes', 'Attendance', 'AttendanceSessions', 'ITA312R|2026-11-04', 'APPROVE', 'Attendance submitted for ITA312R 3B', 'Success', '10.10.3.40'),
+      a('2026-11-08 16:40', 'registrar.santos', 'Registration', 'Students', 'S-2024-12345', 'UPDATE', 'Updated contact number', 'Success', '10.10.4.8', 'mobile: 0917 000 0000', 'mobile: 0917 123 4567'),
+      a('2026-11-07 14:02', 'ict.admin', 'User Accounts', 'Users', 'U-8', 'CREATE', 'Created account faculty.ocampo', 'Success', '10.10.1.5'),
+      a('2026-11-06 02:00', 'SYSTEM', 'Backup', 'BackupHistory', 'BK-0021', 'BACKUP', 'Scheduled full backup completed', 'Success', ''),
+      a('2026-11-05 11:31', 'faculty.lim', 'Authentication', 'Users', 'U-7', 'LOGIN', 'Failed login (wrong password) x5 - account locked', 'Failed', '10.10.3.77'),
+      a('2026-11-04 15:20', 'ict.admin', 'User Accounts', 'Users', 'U-9', 'UPDATE', 'Suspended account registrar.dizon', 'Success', '10.10.1.5', 'status: Active', 'status: Suspended'),
+      a('2026-11-03 10:11', 'edtech.staff', 'Scheduling', 'ClassSchedules', 'CO-4', 'UPDATE', 'Changed room for GEN-RP 3B', 'Success', '10.10.2.17', 'room: RM-101', 'room: RM-204'),
+      a('2026-11-02 09:45', 'dept.cruz', 'Grades', 'StudentGrades', 'ITP4101', 'APPROVE', 'Approved Prelim grades', 'Success', '10.10.5.3'),
+      a('2026-10-30 13:09', 'ict.admin', 'Roles', 'RolePermissions', 'FACULTY', 'UPDATE', 'Granted REPORT_GENERATE to FACULTY', 'Success', '10.10.1.5', '', 'REPORT_GENERATE')
+    ];
+    list.forEach((e, i) => { e.id = list.length - i; });
+    return list;
+  };
+
+  const seedBackups = () => ({
+    config: { frequency: 'Daily', time: '02:00', type: 'Full', location: '/secure/backups/bits-sims', retention: 30, enabled: true },
+    history: [
+      { id: 'BK-0021', type: 'Full', start: '2026-11-09 02:00', end: '2026-11-09 02:14', size: 1288490188, status: 'Completed', checksum: 'sha256:9f2c\u20268ab1', by: 'SYSTEM', restoreTested: '2026-11-01', failure: '' },
+      { id: 'BK-0020', type: 'Full', start: '2026-11-08 02:00', end: '2026-11-08 02:13', size: 1277098598, status: 'Completed', checksum: 'sha256:41ad\u20260e77', by: 'SYSTEM', restoreTested: '', failure: '' },
+      { id: 'BK-0019', type: 'Full', start: '2026-11-07 02:00', end: '2026-11-07 02:02', size: 0, status: 'Failed', checksum: '', by: 'SYSTEM', restoreTested: '', failure: 'Storage volume unreachable (timeout after 120 s).' },
+      { id: 'BK-0018', type: 'Full', start: '2026-11-06 02:00', end: '2026-11-06 02:12', size: 1265401702, status: 'Completed', checksum: 'sha256:c7e5\u2026b310', by: 'SYSTEM', restoreTested: '', failure: '' },
+      { id: 'BK-0017', type: 'Full', start: '2026-11-05 02:00', end: '2026-11-05 02:13', size: 1259292835, status: 'Completed', checksum: 'sha256:7d10\u2026f2c9', by: 'SYSTEM', restoreTested: '', failure: '' },
+      { id: 'BK-0016', type: 'Full', start: '2026-11-04 14:30', end: '2026-11-04 14:44', size: 1250819481, status: 'Completed', checksum: 'sha256:aa83\u20263d5e', by: 'ict.admin', restoreTested: '', failure: '' }
+    ]
+  });
+
+  const seedEvents = () => [
+    { id: 'EV-0104', ts: '2026-11-09 07:58', type: 'Performance Alert', module: 'Reports', desc: 'Report generation queue exceeded 8 s average.', severity: 'Warning', status: 'Investigating', by: '', resolved: '' },
+    { id: 'EV-0103', ts: '2026-11-08 22:40', type: 'Database Issue', module: 'Attendance', desc: 'Slow query on AttendanceRecords (3.1 s).', severity: 'Error', status: 'Open', by: '', resolved: '' },
+    { id: 'EV-0102', ts: '2026-11-07 02:02', type: 'Application Error', module: 'Backup', desc: 'Scheduled backup BK-0019 failed: storage unreachable.', severity: 'Critical', status: 'Resolved', by: 'ict.admin', resolved: '2026-11-07 09:30' },
+    { id: 'EV-0101', ts: '2026-11-05 11:31', type: 'Server Warning', module: 'Authentication', desc: 'Repeated failed logins for faculty.lim (5).', severity: 'Warning', status: 'Resolved', by: 'edtech.staff', resolved: '2026-11-05 11:50' },
+    { id: 'EV-0100', ts: '2026-11-03 08:15', type: 'Performance Alert', module: 'Enrollment', desc: 'Peak enrollment load: 1,040 concurrent sessions.', severity: 'Information', status: 'Resolved', by: 'ict.admin', resolved: '2026-11-03 10:00' }
+  ];
+
+  const ROOMS = ['ITLAB-01', 'ITLAB-02', 'ITLAB-03', 'RM-101', 'RM-204', 'RM-305'];
+  const seedClasses = () => [
+    { id: 'CO-1', code: 'ITP3112R', title: 'System Administration and Maintenance 1', section: '3B', year: '3rd Year', faculty: 'faculty.reyes', day: 'Monday', start: '08:00', end: '11:00', room: 'ITLAB-01', modality: 'Face-to-Face', type: 'Combined', capacity: 40, size: 8, status: 'Open' },
+    { id: 'CO-2', code: 'ITP3111R', title: 'Network Management 2', section: '3B', year: '3rd Year', faculty: 'faculty.reyes', day: 'Tuesday', start: '13:00', end: '16:00', room: 'ITLAB-02', modality: 'Face-to-Face', type: 'Combined', capacity: 40, size: 8, status: 'Open' },
+    { id: 'CO-3', code: 'ITA312R', title: 'Platform Technologies 3 (Cloud Computing)', section: '3B', year: '3rd Year', faculty: 'faculty.reyes', day: 'Wednesday', start: '09:00', end: '12:00', room: 'ITLAB-01', modality: 'Hybrid', type: 'Combined', capacity: 40, size: 8, status: 'Open' },
+    { id: 'CO-4', code: 'GEN-RP', title: 'Readings in Philippine History', section: '3B', year: '3rd Year', faculty: 'faculty.tan', day: 'Friday', start: '10:00', end: '12:00', room: 'RM-204', modality: 'Face-to-Face', type: 'Lecture', capacity: 45, size: 41, status: 'Open' },
+    { id: 'CO-5', code: 'ITP2101', title: 'Data Structures and Algorithms', section: '2A', year: '2nd Year', faculty: 'faculty.tan', day: 'Monday', start: '13:00', end: '16:00', room: 'RM-305', modality: 'Face-to-Face', type: 'Combined', capacity: 40, size: 38, status: 'Open' },
+    { id: 'CO-6', code: 'ITP4101', title: 'Capstone Project 1', section: '4A', year: '4th Year', faculty: 'faculty.lim', day: 'Thursday', start: '09:00', end: '12:00', room: 'ITLAB-03', modality: 'Hybrid', type: 'Laboratory', capacity: 30, size: 30, status: 'Full' }
+  ];
+
+  const ROSTER = [
+    { sn: '2024-12345', name: 'Dawson James Garcia' }, { sn: '2024-10231', name: 'Angela Mae Bautista' },
+    { sn: '2024-10477', name: 'Carlo Miguel Dela Cruz' }, { sn: '2024-10586', name: 'Jasmine Faith Ramos' },
+    { sn: '2024-10902', name: 'Kyle Andrei Navarro' }, { sn: '2024-11019', name: 'Marianne Joy Santiago' },
+    { sn: '2024-11248', name: 'Paolo Enrico Villanueva' }, { sn: '2024-11373', name: 'Trisha Anne Mercado' }
+  ];
+  const PERIODS = ['Prelim', 'Midterm', 'Final'];
+  const DAY_IDX = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
+
+  // Grading scale (matches the student portal: 1.00 highest, 3.00 passing, 5.00 failed)
+  const SCALE = [[97, 1.00], [94, 1.25], [91, 1.50], [88, 1.75], [85, 2.00], [82, 2.25], [79, 2.50], [76, 2.75], [75, 3.00]];
+  const toGrade = (pct) => { for (const [min, g] of SCALE) if (pct >= min) return g; return 5.00; };
+
+  function meetingDates(c) {
+    const d = new Date(2026, 7, 3);
+    while (d.getDay() !== DAY_IDX[c.day]) d.setDate(d.getDate() + 1);
+    const end = new Date(); end.setHours(23, 59, 59, 999);
+    const out = [];
+    while (d <= end) { out.push(isoDate(d)); d.setDate(d.getDate() + 7); }
+    return out.reverse().slice(0, 10);
+  }
+
+  function seedFaculty() {
+    const fac = { attendance: {}, assessments: [], scores: {}, gradeStatus: {}, alerts: [] };
+    const classes = seedClasses().filter((c) => c.faculty === 'faculty.reyes');
+    classes.forEach((c, ci) => {
+      fac.attendance[c.id] = {};
+      meetingDates(c).slice(1).forEach((date, di) => {   // newest meeting stays open (a pending task)
+        const rows = {};
+        ROSTER.forEach((s, si) => {
+          const r = rnd(ci * 100 + di * 10 + si + 1);
+          const status = r > 0.93 ? 'Absent' : r > 0.84 ? 'Late' : 'Present';
+          rows[s.sn] = { status, timeIn: status === 'Absent' ? '' : (status === 'Late' ? '' + (c.start.slice(0, 2)) + ':' + pad(12 + si) : c.start), timeOut: '', remarks: '' };
+        });
+        fac.attendance[c.id][date] = { status: 'Submitted', rows, recordedAt: date + ' 17:00' };
+      });
+      [['Quiz 1', 'Quiz', 20, 20], ['Quiz 2', 'Quiz', 30, 20], ['Prelim Examination', 'Examination', 50, 60]].forEach(([name, type, max, weight], i) => {
+        const id = `A-${c.id}-${i + 1}`;
+        fac.assessments.push({ id, classId: c.id, period: 'Prelim', name, type, max, weight, date: '2026-09-' + pad(10 + i * 6) });
+        fac.scores[id] = {};
+        ROSTER.forEach((s, si) => { fac.scores[id][s.sn] = Math.round(max * (0.7 + rnd(ci * 50 + i * 9 + si + 3) * 0.28)); });
+      });
+      fac.gradeStatus[`${c.id}|Prelim`] = ci === 0 ? 'Submitted' : 'Draft';
+    });
+    return fac;
+  }
+
+  const seedPolicy = () => ({ maxFailed: 5, lockMin: 15, minPw: 8, timeoutMin: 20 });
+  const seedAlertCfg = () => ({ maxAbsences: 3, tardiness: 3, notifyGuardian: true, notifyFaculty: true, notifyRegistrar: false, enabled: true });
+
+  /* =====================================================
+     STATE
+  ===================================================== */
+  const db = {
+    users: load(K.users, seedUsers), perms: load(K.perms, seedPerms), audit: load(K.audit, seedAudit),
+    backups: load(K.backups, seedBackups), events: load(K.events, seedEvents), classes: load(K.classes, seedClasses),
+    fac: load(K.fac, seedFaculty), policy: load(K.policy, seedPolicy), alertCfg: load(K.alerts, seedAlertCfg),
+    reports: load(K.reports, () => []), pw: load(K.pw, () => ({})), locks: load(K.locks, () => ({}))
+  };
+  const save = (...names) => names.forEach((n) => persist(K[n === 'alertCfg' ? 'alerts' : n], db[n]));
+
+  let me = null;          // signed-in staff account
+  let page = 'dashboard';
+  let root = null;
+  let modalOk = null;
+  let toastTimer = null;
+  let monTimer = null;
+  let idleTimer = null;
+  let lastActive = Date.now();
+  let metrics = null;
+  let rolesDraft = null;
+
+  const ui = {
+    acct: { q: '', status: 'all', role: 'all' },
+    audit: { q: '', mod: 'all', status: 'all' },
+    att: { cls: '', date: '', draft: null, key: '' },
+    gr: { cls: '', period: 'Prelim' },
+    rep: { id: '', cls: '', date: '', period: 'Prelim', from: '', to: '', result: null }
+  };
+
+  const can = (cap) => me && CAPS[me.role].includes(cap);
+  const userName = (username) => { const u = db.users.find((x) => x.username === username); return u ? u.name : username; };
+
+  function audit(mod, ent, rec, act, desc, status, prev, next) {
+    db.audit.unshift({ id: (db.audit[0] ? db.audit[0].id : 0) + 1, ts: nowStamp(), user: me ? me.username : 'SYSTEM', mod, ent, rec, act, desc, status: status || 'Success', ip: '10.10.' + (me ? (me.role === 'ICT_ADMIN' ? '1.5' : me.role === 'EDTECH' ? '2.17' : '3.40') : '0.1'), prev: prev || '', next: next || '' });
+    if (db.audit.length > 300) db.audit.length = 300;
+    save('audit');
+  }
+
+  /* =====================================================
+     AUTHENTICATION
+  ===================================================== */
+  const findAccount = (id) => {
+    const key = String(id || '').trim().toLowerCase();
+    return ACCOUNTS.find((a) => a.username === key || a.email === key) || null;
+  };
+
+  function isStaffUser(username) { return Boolean(findAccount(username)); }
+
+  function authenticate(username, password) {
+    const acc = findAccount(username);
+    if (!acc) return { ok: false, message: 'Account not found.' };
+    const rec = db.users.find((u) => u.username === acc.username);
+    const lock = db.locks[acc.username] || { fails: 0, until: 0 };
+
+    if (rec && (rec.status === 'Suspended' || rec.status === 'Inactive')) return { ok: false, message: `This account is ${rec.status.toLowerCase()}. Please contact ICT Services.` };
+    if (lock.until && Date.now() < lock.until) {
+      const mins = Math.ceil((lock.until - Date.now()) / 60000);
+      return { ok: false, message: `Too many failed attempts. This account is locked for about ${mins} more minute(s).` };
+    }
+
+    const current = db.pw[acc.username] || acc.pwHash;
+    if (hash(password) !== current) {
+      lock.fails = (lock.fails || 0) + 1;
+      if (lock.fails >= db.policy.maxFailed) {
+        lock.until = Date.now() + db.policy.lockMin * 60000;
+        lock.fails = 0;
+        if (rec) { rec.status = 'Locked'; rec.lockoutUntil = new Date(lock.until).toISOString(); save('users'); }
+      }
+      if (rec) { rec.failed = lock.fails || db.policy.maxFailed; save('users'); }
+      db.locks[acc.username] = lock; save('locks');
+      me = acc; audit('Authentication', 'Users', 'U-' + (rec ? rec.id : '?'), 'LOGIN', 'Failed login (wrong password)', 'Failed'); me = null;
+      const left = Math.max(0, db.policy.maxFailed - lock.fails);
+      return { ok: false, message: lock.until ? `Too many failed attempts. The account is locked for ${db.policy.lockMin} minutes.` : `Incorrect password. ${left} attempt(s) left before the account locks.` };
+    }
+
+    db.locks[acc.username] = { fails: 0, until: 0 }; save('locks');
+    if (rec) { rec.failed = 0; rec.lockoutUntil = ''; rec.lastLogin = nowStamp(); if (rec.status === 'Locked') rec.status = 'Active'; save('users'); }
+    return { ok: true, account: acc };
+  }
+
+  /* =====================================================
+     SHELL
+  ===================================================== */
+  const initials = (name) => name.replace(/^(Dr\.|Prof\.)\s*/i, '').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+
+  function buildShell() {
+    root = $('#staffView');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'staffView';
+      root.className = 'dashboard-wrapper hidden';
+      document.body.appendChild(root);
+    }
+    const label = { ICT_ADMIN: 'ICT Services Console', EDTECH: 'EdTech Services Console', FACULTY: 'Faculty Portal' }[me.role];
+    root.innerHTML = `
+      <header class="top-nav">
+        <div class="nav-brand">
+          <img src="images/BITS_WHITE-BLUE LOGO 2.png" alt="BITS-SIMS Logo" class="nav-logo" />
+          <span class="nav-title">BITS-SIMS</span>
+          <span class="staff-role-chip">${esc(label)}</span>
+        </div>
+        <div class="nav-user-area">
+          <span class="nav-page-label" id="stPageLabel">Dashboard</span>
+          <span class="nav-divider" aria-hidden="true"></span>
+          <button type="button" class="user-avatar-badge staff-avatar" data-nav="account" aria-label="My account" title="${esc(me.name)}">${esc(initials(me.name))}</button>
+        </div>
+      </header>
+      <div class="app-layout">
+        <nav class="sidebar" aria-label="Main Navigation">
+          <ul class="sidebar-menu">
+            ${NAV[me.role].map(([key, text, ic]) => `<li><a href="#" class="sidebar-item" data-nav="${key}">${icon(ic)}<span>${esc(text)}</span></a></li>`).join('')}
+            <li><a href="#" class="sidebar-item logout-link" data-act="logout">${icon('out')}<span>Log Out</span></a></li>
+          </ul>
+        </nav>
+        <main class="dashboard-main"><div id="stMain" class="dm-panel staff-panel"></div></main>
+      </div>
+      <div id="stModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="stModalTitle">
+        <div class="modal-card staff-modal-card">
+          <header class="modal-head"><h3 id="stModalTitle"></h3><button type="button" class="modal-close" data-act="modal-close" aria-label="Close">&times;</button></header>
+          <div class="modal-body" id="stModalBody"></div>
+          <footer class="modal-foot" id="stModalFoot">
+            <button type="button" class="btn-light btn-sm" data-act="modal-close" id="stModalCancel">Cancel</button>
+            <button type="button" class="btn-solid btn-sm" data-act="modal-ok" id="stModalOk">Save</button>
+          </footer>
+        </div>
+      </div>
+      <div id="stToast" class="toast" role="status" aria-live="polite"></div>`;
+    root.addEventListener('click', onClick);
+    root.addEventListener('change', onChange);
+    root.addEventListener('input', onInput);
+    root.addEventListener('submit', onSubmit);
+  }
+
+  function toast(msg, type) {
+    const el = $('#stToast');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = `toast ${type || 'success'} show`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+  }
+
+  function openModal({ title, body, ok = 'Save', cancel = 'Cancel', onOk, hideFoot }) {
+    $('#stModalTitle').textContent = title;
+    $('#stModalBody').innerHTML = body;
+    $('#stModalOk').textContent = ok;
+    $('#stModalCancel').textContent = cancel;
+    $('#stModalFoot').classList.toggle('hidden', Boolean(hideFoot));
+    modalOk = onOk || null;
+    $('#stModal').classList.remove('hidden');
+    const first = $('#stModalBody input, #stModalBody select, #stModalBody textarea');
+    if (first) first.focus(); else $('#stModalOk').focus();
+  }
+  function closeModal() { $('#stModal').classList.add('hidden'); modalOk = null; $('#stModalBody').innerHTML = ''; }
+  function ask(title, message, label, fn, danger) {
+    openModal({ title, body: `<p class="dm-modal-note staff-ask">${esc(message)}</p>`, ok: label, onOk: () => { fn(); } });
+    $('#stModalOk').classList.toggle('btn-danger', Boolean(danger));
+  }
+
+  function go(key) {
+    if (!NAV[me.role].some((n) => n[0] === key)) key = 'dashboard';
+    page = key;
+    clearInterval(monTimer); monTimer = null;
+    $$('.sidebar-item[data-nav]', root).forEach((a) => a.classList.toggle('active', a.dataset.nav === key));
+    const item = NAV[me.role].find((n) => n[0] === key);
+    $('#stPageLabel').textContent = key === 'dashboard' ? 'Dashboard' : item[1];
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  function render() {
+    const fn = PAGES[page];
+    $('#stMain').innerHTML = fn ? fn() : '';
+    if (page === 'monitoring') monTimer = setInterval(tickMetrics, 4000);
+    if (page === 'accounts') refreshAccounts();
+    if (page === 'audit') refreshAudit();
+    if (page === 'attendance') updateAttSummary();
+  }
+
+  /* ---------- small view helpers ---------- */
+  const STATUS_CLS = {
+    Active: 'ok', Completed: 'ok', Resolved: 'ok', Success: 'ok', Normal: 'ok', Present: 'ok', Verified: 'ok', Open: 'warn', Approved: 'ok',
+    'Pending Activation': 'warn', Pending: 'warn', Draft: 'warn', Warning: 'warn', Late: 'warn', 'Left Early': 'warn',
+    Running: 'info', Investigating: 'info', Submitted: 'info', Excused: 'info', Information: 'info',
+    Suspended: 'risk', Locked: 'risk', Failed: 'risk', Critical: 'risk', Error: 'risk', Absent: 'risk',
+    Inactive: 'muted', Full: 'warn'
+  };
+  const badge = (s) => `<span class="dm-status ${STATUS_CLS[s] || 'muted'}">${esc(s)}</span>`;
+  const head = (title, sub, extra) => `<header class="adm-head"><div><h2>${esc(title)}</h2><p>${esc(sub)}</p></div>${extra || ''}</header>`;
+  const stat = (label, value, sub, tone) => `<div class="dash-card dm-card staff-stat ${tone || ''}"><span class="dm-stat-label">${esc(label)}</span><span class="dm-stat-value">${value}</span><span class="dm-stat-sub">${esc(sub || '')}</span></div>`;
+  const table = (cols, rows, empty, id) => `
+    <div class="dm-table-wrap staff-table-wrap"><table class="dm-table staff-table" ${id ? `id="${id}"` : ''}>
+      <thead><tr>${cols.map((c) => `<th scope="col">${c}</th>`).join('')}</tr></thead>
+      <tbody>${rows.length ? rows.join('') : `<tr><td colspan="${cols.length}" class="dm-empty">${esc(empty || 'Nothing to show.')}</td></tr>`}</tbody>
+    </table></div>`;
+  const card = (title, body, cls) => `<section class="dash-card dm-card staff-card ${cls || ''}">${title ? `<h3 class="adm-sec-title">${esc(title)}</h3>` : ''}${body}</section>`;
+  const opts = (list, sel, all) => (all ? `<option value="all">${esc(all)}</option>` : '') + list.map(([v, t]) => `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(t)}</option>`).join('');
+  const field = (id, label, input, hint) => `<div class="set-field"><label for="${id}">${esc(label)}</label>${input}${hint ? `<small class="set-hint">${esc(hint)}</small>` : ''}<small class="set-error" id="${id}Error"></small></div>`;
+  const setErr = (id, msg) => { const e = $('#' + id + 'Error'); if (e) e.textContent = msg || ''; const i = $('#' + id); if (i) i.setAttribute('aria-invalid', msg ? 'true' : 'false'); };
+  const recentAudit = (n, full) => table(full ? ['Time', 'User', 'Action', 'Description', 'Status'] : ['Time', 'Action', 'Description', 'Status'],
+    db.audit.slice(0, n).map((a) => `<tr><td>${esc(a.ts)}</td>${full ? `<td>${esc(a.user)}</td>` : ''}<td>${esc(a.act)}</td><td>${esc(a.desc)}</td><td>${badge(a.status)}</td></tr>`));
+
+  /* =====================================================
+     MONITORING DATA (simulated)
+  ===================================================== */
+  const METRIC_DEFS = [
+    { key: 'resp', name: 'API response time', unit: 'ms', base: 220, jit: 80, warn: 500, crit: 1000, dec: 0 },
+    { key: 'sess', name: 'Concurrent sessions', unit: '', base: 310, jit: 90, warn: 800, crit: 1200, dec: 0 },
+    { key: 'cpu', name: 'CPU utilization', unit: '%', base: 46, jit: 14, warn: 70, crit: 90, dec: 0 },
+    { key: 'dbq', name: 'Database query time', unit: 'ms', base: 95, jit: 45, warn: 200, crit: 500, dec: 0 },
+    { key: 'err', name: 'Error rate', unit: '%', base: 0.4, jit: 0.5, warn: 1, crit: 5, dec: 2 },
+    { key: 'avail', name: 'Database availability', unit: '%', base: 99.97, jit: 0.04, warn: 99.5, crit: 99, dec: 2, invert: true }
+  ];
+  const metricStatus = (d, v) => d.invert ? (v < d.crit ? 'Critical' : v < d.warn ? 'Warning' : 'Normal') : (v >= d.crit ? 'Critical' : v >= d.warn ? 'Warning' : 'Normal');
+  function tickMetrics(force) {
+    metrics = METRIC_DEFS.map((d, i) => {
+      const v = d.base + (rnd(Date.now() / 4000 + i) - 0.5) * 2 * d.jit;
+      return { d, v: d.invert ? Math.min(100, v) : Math.max(0, v) };
+    });
+    const box = $('#stMetrics');
+    if (box) box.innerHTML = metricsHtml();
+    if (force === true) toast('Metrics refreshed.', 'info');
+  }
+  function metricsHtml() {
+    if (!metrics) tickMetrics();
+    return metrics.map(({ d, v }) => {
+      const st = metricStatus(d, v);
+      const pct = d.invert ? Math.max(4, Math.min(100, (v - 98) / 2 * 100)) : Math.min(100, (v / d.crit) * 100);
+      return `<div class="dash-card dm-card staff-metric"><span class="dm-stat-label">${esc(d.name.toUpperCase())}</span>
+        <span class="dm-stat-value">${v.toFixed(d.dec)}<small>${esc(d.unit)}</small></span>
+        <span class="staff-meter ${st.toLowerCase()}"><span style="width:${pct.toFixed(0)}%"></span></span>
+        <span class="dm-stat-sub">${badge(st)} warn ${d.invert ? '&lt;' : '&ge;'} ${d.warn}${esc(d.unit)}</span></div>`;
+    }).join('');
+  }
+  const healthSummary = () => { if (!metrics) tickMetrics(); const s = metrics.map(({ d, v }) => metricStatus(d, v)); return s.includes('Critical') ? 'Critical' : s.includes('Warning') ? 'Warning' : 'Normal'; };
+
+  /* =====================================================
+     CLASS HELPERS (schedules, conflicts, faculty scope)
+  ===================================================== */
+  const myClasses = () => db.classes.filter((c) => c.faculty === me.username && c.status !== 'Cancelled');
+  const overlap = (a, b) => a.day === b.day && toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end);
+  function findConflicts(c) {
+    const out = [];
+    db.classes.forEach((o) => {
+      if (o.id === c.id || o.status === 'Cancelled' || !overlap(c, o)) return;
+      if (o.room === c.room) out.push(`Room ${c.room} is already used by ${o.code} ${o.section} (${fmtTime(o.start)}\u2013${fmtTime(o.end)}).`);
+      if (o.faculty === c.faculty) out.push(`${userName(c.faculty)} already teaches ${o.code} ${o.section} at that time.`);
+    });
+    return out;
+  }
+  const totalConflicts = () => db.classes.reduce((n, c) => n + findConflicts(c).length, 0) / 2;
+  const schedText = (c) => `${c.day.slice(0, 3)} ${fmtTime(c.start)}\u2013${fmtTime(c.end)}`;
+
+  /* =====================================================
+     PAGES
+  ===================================================== */
+  const PAGES = {};
+
+  /* ---------- DASHBOARDS ---------- */
+  PAGES.dashboard = () => {
+    const u = db.users;
+    if (me.role === 'ICT_ADMIN') {
+      const last = db.backups.history.find((b) => b.status === 'Completed');
+      return `${head(`Welcome back, ${me.name.split(' ')[0]}`, 'System administration overview for BITS-SIMS.')}
+        <div class="staff-stats">
+          ${stat('TOTAL ACCOUNTS', u.length, `${u.filter((x) => x.status === 'Active').length} active`)}
+          ${stat('NEED ATTENTION', u.filter((x) => ['Locked', 'Suspended', 'Pending Activation'].includes(x.status)).length, 'Locked, suspended or pending')}
+          ${stat('OPEN SYSTEM EVENTS', db.events.filter((e) => e.status !== 'Resolved').length, `System health: ${healthSummary()}`)}
+          ${stat('LAST GOOD BACKUP', last ? fmtDate(last.end) : '\u2014', last ? `${last.id} \u00B7 ${fmtBytes(last.size)}` : 'No completed backup', 'is-blue')}
+        </div>
+        <div class="staff-split">
+          ${card('Recent activity', recentAudit(7, true))}
+          <div class="staff-stack">
+            ${card('Quick actions', `<div class="staff-quick">
+              <button type="button" class="btn-solid" data-act="acct-add">+ New account</button>
+              <button type="button" class="btn-light" data-nav="audit">Open audit trail</button>
+              <button type="button" class="btn-light" data-nav="backups">Backups</button>
+              <button type="button" class="btn-light" data-nav="monitoring">Monitoring</button></div>`)}
+            ${card('Accounts by role', `<ul class="staff-bars">${ROLE_ORDER.map((r) => { const n = u.filter((x) => x.role === r).length; return `<li><span>${esc(ROLE_LABEL[r])}</span><span class="staff-bar"><span style="width:${(n / u.length) * 100}%"></span></span><strong>${n}</strong></li>`; }).join('')}</ul>`)}
+          </div>
+        </div>`;
+    }
+    if (me.role === 'EDTECH') {
+      const last = db.backups.history[0];
+      return `${head(`Welcome back, ${me.name.split(' ')[0]}`, 'Education technology operations: schedules, class assignments and platform health.')}
+        <div class="staff-stats">
+          ${stat('PLATFORM HEALTH', healthSummary(), 'From live monitoring')}
+          ${stat('OPEN SYSTEM EVENTS', db.events.filter((e) => e.status !== 'Resolved').length, 'Awaiting resolution')}
+          ${stat('CLASS OFFERINGS', db.classes.length, `${totalConflicts()} schedule conflict(s)`)}
+          ${stat('LATEST BACKUP', last.status, `${last.id} \u00B7 ${fmtDate(last.start)}`, 'is-blue')}
+        </div>
+        <div class="staff-split">
+          ${card('Open system events', table(['Event', 'Module', 'Severity', 'Status'], db.events.filter((e) => e.status !== 'Resolved').map((e) => `<tr><td>${esc(e.desc)}</td><td>${esc(e.module)}</td><td>${badge(e.severity)}</td><td>${badge(e.status)}</td></tr>`), 'No open events.'))}
+          <div class="staff-stack">
+            ${card('Quick actions', `<div class="staff-quick"><button type="button" class="btn-solid" data-nav="classes">Manage schedules</button><button type="button" class="btn-light" data-nav="monitoring">Monitoring</button><button type="button" class="btn-light" data-nav="accounts">Account support</button></div>`)}
+            ${card('Recent activity', recentAudit(5, false))}
+          </div>
+        </div>`;
+    }
+    // Faculty
+    const cls = myClasses();
+    const dayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+    const todays = cls.filter((c) => c.day === dayName);
+    const attTasks = cls.filter((c) => { const d = meetingDates(c)[0]; const s = db.fac.attendance[c.id] && db.fac.attendance[c.id][d]; return d && !(s && s.status === 'Submitted'); });
+    const gradeTasks = [];
+    cls.forEach((c) => PERIODS.forEach((p) => { if (db.fac.assessments.some((a) => a.classId === c.id && a.period === p) && (db.fac.gradeStatus[`${c.id}|${p}`] || 'Draft') === 'Draft') gradeTasks.push([c, p]); }));
+    return `${head(`Welcome back, ${me.name.split(' ')[0]}`, `${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} \u00B7 1st Semester, AY 2026\u20132027`)}
+      <div class="staff-stats">
+        ${stat('ASSIGNED CLASSES', cls.length, `${cls.reduce((n, c) => n + c.size, 0)} students in total`)}
+        ${stat('CLASSES TODAY', todays.length, todays.length ? todays.map((c) => c.code).join(', ') : 'No class meetings today')}
+        ${stat('ATTENDANCE TO SUBMIT', attTasks.length, 'Latest meeting not yet submitted')}
+        ${stat('GRADES TO SUBMIT', gradeTasks.length, 'Periods still in draft', 'is-blue')}
+      </div>
+      <div class="staff-split">
+        <div class="staff-stack">
+          ${card('Today\u2019s schedule', todays.length ? `<ul class="staff-list">${todays.map((c) => `<li><div><strong>${esc(c.code)} \u00B7 ${esc(c.title)}</strong><small>${esc(c.section)} \u00B7 ${fmtTime(c.start)}\u2013${fmtTime(c.end)} \u00B7 ${esc(c.room)}</small></div><button type="button" class="btn-solid btn-sm" data-act="att-open" data-id="${c.id}">Take attendance</button></li>`).join('')}</ul>` : '<p class="dm-modal-note">You have no class meetings today.</p>')}
+          ${card('My classes', table(['Course', 'Section', 'Schedule', 'Room', 'Students'], cls.map((c) => `<tr><td><strong>${esc(c.code)}</strong><br><small>${esc(c.title)}</small></td><td>${esc(c.section)}</td><td>${esc(schedText(c))}</td><td>${esc(c.room)}</td><td>${c.size}/${c.capacity}</td></tr>`)))}
+        </div>
+        <div class="staff-stack">
+          ${card('To do', `<ul class="staff-list">${attTasks.map((c) => `<li><div><strong>Submit attendance</strong><small>${esc(c.code)} ${esc(c.section)} \u00B7 ${fmtDate(meetingDates(c)[0])}</small></div><button type="button" class="btn-light btn-sm" data-act="att-open" data-id="${c.id}">Open</button></li>`).join('')}${gradeTasks.map(([c, p]) => `<li><div><strong>Submit ${esc(p)} grades</strong><small>${esc(c.code)} ${esc(c.section)}</small></div><button type="button" class="btn-light btn-sm" data-act="gr-open" data-id="${c.id}" data-period="${p}">Open</button></li>`).join('')}</ul>${attTasks.length + gradeTasks.length ? '' : '<p class="dm-modal-note">You\u2019re all caught up.</p>'}`)}
+          ${card('Attendance alerts', db.fac.alerts.length ? `<ul class="staff-list">${db.fac.alerts.slice(0, 5).map((a) => `<li><div><strong>${esc(a.student)}</strong><small>${esc(a.message)}</small></div>${badge(a.type === 'Absence' ? 'Absent' : 'Late')}</li>`).join('')}</ul>` : '<p class="dm-modal-note">No students have crossed an alert threshold.</p>')}
+        </div>
+      </div>`;
+  };
+
+  /* ---------- USER ACCOUNTS ---------- */
+  PAGES.accounts = () => {
+    const full = can('accounts.manage');
+    return `${head(full ? 'User Accounts' : 'Account Support', full ? 'Create, update, lock and reset login accounts. Institutional student and staff records are not affected.' : 'Help users who are locked out. You can unlock accounts and issue password-reset codes; you cannot change roles or personal details.', full ? '<button type="button" class="btn-solid" data-act="acct-add">+ New account</button>' : '')}
+      <div class="staff-stats">
+        ${stat('ACTIVE', db.users.filter((x) => x.status === 'Active').length, 'Can sign in')}
+        ${stat('LOCKED', db.users.filter((x) => x.status === 'Locked').length, 'Too many failed logins')}
+        ${stat('SUSPENDED', db.users.filter((x) => x.status === 'Suspended').length, 'Access blocked')}
+        ${stat('PENDING', db.users.filter((x) => x.status === 'Pending Activation').length, 'Not yet activated')}
+      </div>
+      ${card('', `<div class="staff-toolbar">
+        <input type="search" id="acctQ" class="dm-select staff-search" placeholder="Search name, username or email" value="${esc(ui.acct.q)}" aria-label="Search accounts" />
+        <select id="acctStatus" class="dm-select" aria-label="Filter by status">${opts(['Active', 'Pending Activation', 'Inactive', 'Suspended', 'Locked'].map((s) => [s, s]), ui.acct.status, 'All statuses')}</select>
+        ${full ? `<select id="acctRole" class="dm-select" aria-label="Filter by role">${opts(ROLE_ORDER.map((r) => [r, ROLE_LABEL[r]]), ui.acct.role, 'All roles')}</select>` : ''}
+      </div><div id="acctTable"></div>`)}`;
+  };
+  function refreshAccounts() {
+    const full = can('accounts.manage');
+    const q = ui.acct.q.toLowerCase();
+    const list = db.users.filter((u) => (ui.acct.status === 'all' || u.status === ui.acct.status) && (ui.acct.role === 'all' || u.role === ui.acct.role) &&
+      (!q || [u.name, u.username, u.email].some((v) => v.toLowerCase().includes(q))));
+    const maskEmail = (e) => e.replace(/^(.).*(@.*)$/, '$1\u2022\u2022\u2022$2');
+    const cols = full ? ['Account', 'Role', 'Status', 'MFA', 'Failed logins', 'Last login', 'Actions'] : ['Account', 'Status', 'Failed logins', 'Last login', 'Actions'];
+    const rows = list.map((u) => {
+      const self = u.username === me.username;
+      const protectedAcct = !full && u.role === 'ICT_ADMIN';
+      const acts = full
+        ? `<button type="button" class="btn-light btn-sm" data-act="acct-edit" data-id="${u.id}">Edit</button>
+           <button type="button" class="btn-light btn-sm" data-act="acct-reset" data-id="${u.id}">Reset password</button>
+           ${u.status === 'Locked' ? `<button type="button" class="btn-solid btn-sm" data-act="acct-unlock" data-id="${u.id}">Unlock</button>` : ''}
+           ${self ? '' : `<button type="button" class="btn-light btn-sm" data-act="acct-toggle" data-id="${u.id}">${u.status === 'Suspended' ? 'Reactivate' : 'Suspend'}</button>`}`
+        : (protectedAcct ? '<small>Restricted</small>' : `${u.status === 'Locked' ? `<button type="button" class="btn-solid btn-sm" data-act="acct-unlock" data-id="${u.id}">Unlock</button>` : ''}<button type="button" class="btn-light btn-sm" data-act="acct-reset" data-id="${u.id}">Send reset code</button>`);
+      return full
+        ? `<tr><td><strong>${esc(u.name)}</strong><br><small>${esc(u.username)} \u00B7 ${esc(u.email)}</small></td><td>${esc(ROLE_LABEL[u.role])}</td><td>${badge(u.status)}</td><td>${u.mfa ? 'On' : 'Off'}</td><td>${u.failed}</td><td>${esc(u.lastLogin || 'Never')}</td><td class="staff-actions">${acts}</td></tr>`
+        : `<tr><td><strong>${esc(u.name)}</strong><br><small>${esc(u.username)} \u00B7 ${esc(maskEmail(u.email))}</small></td><td>${badge(u.status)}</td><td>${u.failed}</td><td>${esc(u.lastLogin || 'Never')}</td><td class="staff-actions">${acts}</td></tr>`;
+    });
+    $('#acctTable').innerHTML = table(cols, rows, 'No accounts match your filters.');
+  }
+
+  function accountForm(u) {
+    return `<form id="acctForm" class="staff-form" novalidate>
+      ${field('afName', 'Full name', `<input id="afName" value="${esc(u ? u.name : '')}" />`)}
+      <div class="set-grid-2">
+        ${field('afUser', 'Username', `<input id="afUser" value="${esc(u ? u.username : '')}" autocomplete="off" />`, 'Must be unique.')}
+        ${field('afEmail', 'Account email', `<input id="afEmail" type="email" value="${esc(u ? u.email : '')}" />`)}
+      </div>
+      <div class="set-grid-2">
+        ${field('afRole', 'Role', `<select id="afRole" class="dm-select">${opts(ROLE_ORDER.map((r) => [r, ROLE_LABEL[r]]), u ? u.role : 'FACULTY')}</select>`)}
+        ${field('afStatus', 'Account status', `<select id="afStatus" class="dm-select">${opts(['Pending Activation', 'Active', 'Inactive', 'Suspended', 'Locked'].map((s) => [s, s]), u ? u.status : 'Pending Activation')}</select>`)}
+      </div>
+      <label class="check-row staff-check"><input type="checkbox" id="afMfa" ${u && u.mfa ? 'checked' : ''}/><span>Require multi-factor authentication</span></label>
+      <label class="check-row staff-check"><input type="checkbox" id="afMust" ${!u || u.mustChange ? 'checked' : ''}/><span>Require a password change at next login</span></label>
+    </form>`;
+  }
+  function saveAccount(u) {
+    const name = $('#afName').value.trim(), username = $('#afUser').value.trim().toLowerCase(), email = $('#afEmail').value.trim().toLowerCase();
+    const role = $('#afRole').value, status = $('#afStatus').value;
+    let ok = true;
+    ['afName', 'afUser', 'afEmail'].forEach((i) => setErr(i, ''));
+    if (!name) { setErr('afName', 'Name is required.'); ok = false; }
+    if (!/^[a-z0-9._-]{4,}$/.test(username)) { setErr('afUser', 'Use at least 4 letters, numbers, dots or dashes.'); ok = false; }
+    else if (db.users.some((x) => x.username === username && (!u || x.id !== u.id))) { setErr('afUser', 'That username is already taken.'); ok = false; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setErr('afEmail', 'Enter a valid email address.'); ok = false; }
+    else if (db.users.some((x) => x.email === email && (!u || x.id !== u.id))) { setErr('afEmail', 'That email is already registered.'); ok = false; }
+    if (u && u.username === me.username && (role !== u.role || ['Suspended', 'Inactive', 'Locked'].includes(status))) {
+      setErr('afRole', 'You cannot change your own role or lock yourself out.'); ok = false;
+    }
+    if (!ok) return false;
+
+    if (u) {
+      const before = `${u.role}/${u.status}`;
+      Object.assign(u, { name, username, email, role, status, mfa: $('#afMfa').checked, mustChange: $('#afMust').checked });
+      if (status !== 'Locked') { u.failed = 0; u.lockoutUntil = ''; }
+      audit('User Accounts', 'Users', 'U-' + u.id, 'UPDATE', `Updated account ${username}`, 'Success', before, `${role}/${status}`);
+      toast('Account updated.');
+    } else {
+      const id = Math.max(0, ...db.users.map((x) => x.id)) + 1;
+      db.users.push({ id, username, name, email, role, status, mfa: $('#afMfa').checked, failed: 0, lockoutUntil: '', lastLogin: '', mustChange: $('#afMust').checked, created: isoDate(new Date()) });
+      audit('User Accounts', 'Users', 'U-' + id, 'CREATE', `Created account ${username} (${ROLE_LABEL[role]})`);
+      toast(`Account ${username} created.`);
+    }
+    save('users'); render();
+    return true;
+  }
+  function resetPassword(u) {
+    const temp = 'Tmp-' + Math.random().toString(36).slice(2, 8).toUpperCase() + '!7';
+    u.mustChange = true; u.failed = 0; if (u.status === 'Locked') u.status = 'Active';
+    if (findAccount(u.username)) { db.pw[u.username] = hash(temp); save('pw'); }
+    save('users');
+    audit('User Accounts', 'Users', 'U-' + u.id, 'UPDATE', `Issued temporary password for ${u.username}`);
+    render();
+    openModal({ title: 'Temporary password issued', hideFoot: false, ok: 'Done', cancel: 'Close',
+      body: `<p class="dm-modal-note">Give this one-time code to <strong>${esc(u.name)}</strong> through a secure channel. They must change it at next login. It is shown only once.</p><div class="staff-code">${esc(temp)}</div>` });
+  }
+
+  /* ---------- ROLES & PERMISSIONS ---------- */
+  PAGES.roles = () => {
+    const edit = can('roles.manage');
+    const perms = rolesDraft || db.perms;
+    const groups = [...new Set(PERMISSIONS.map((p) => p[1]))];
+    const rows = [];
+    groups.forEach((g) => {
+      rows.push(`<tr class="staff-group"><td colspan="${ROLE_ORDER.length + 1}">${esc(g)}</td></tr>`);
+      PERMISSIONS.filter((p) => p[1] === g).forEach(([code]) => rows.push(`<tr><td><code>${code}</code></td>${ROLE_ORDER.map((r) => `<td class="num"><input type="checkbox" data-perm="${r}|${code}" ${perms[r].includes(code) ? 'checked' : ''} ${edit ? '' : 'disabled'} aria-label="${code} for ${esc(ROLE_LABEL[r])}" /></td>`).join('')}</tr>`));
+    });
+    return `${head('Roles & Permissions', edit ? 'Decide which actions each role may perform. The server must enforce these; hiding a button is not access control.' : 'Read-only view of what each role may do. Only ICT Services can change roles and permissions.',
+      edit ? `<span class="staff-quick"><button type="button" class="btn-light" data-act="roles-discard">Discard</button><button type="button" class="btn-solid" data-act="roles-save" ${rolesDraft ? '' : 'disabled'}>Save changes</button></span>` : '')}
+      <div class="staff-stats">${['ICT_ADMIN', 'EDTECH', 'FACULTY', 'REGISTRAR'].map((r) => stat(ROLE_LABEL[r].toUpperCase(), db.users.filter((u) => u.role === r).length, `${perms[r].length} permissions`)).join('')}</div>
+      ${card('Permission matrix', `<div class="dm-table-wrap staff-table-wrap"><table class="dm-table staff-table staff-matrix"><thead><tr><th>Permission</th>${ROLE_ORDER.map((r) => `<th class="num">${esc(ROLE_LABEL[r])}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>
+        <p class="dm-foot">Student is an optional self-service role with tightly limited access to its own records.</p>`)}`;
+  };
+
+  /* ---------- AUDIT TRAILS ---------- */
+  PAGES.audit = () => {
+    const full = can('audit.full');
+    const mods = [...new Set(db.audit.map((a) => a.mod))].sort();
+    return `${head('Audit Trails', full ? 'Append-only record of who did what, when and from where.' : 'Read-only activity history. IP addresses and before/after values are available to ICT Services only.',
+      full ? '<button type="button" class="btn-light" data-act="audit-export">Export CSV</button>' : '')}
+      ${card('', `<div class="staff-toolbar">
+        <input type="search" id="auQ" class="dm-select staff-search" placeholder="Search user, action or description" value="${esc(ui.audit.q)}" aria-label="Search audit log" />
+        <select id="auMod" class="dm-select" aria-label="Filter by module">${opts(mods.map((m) => [m, m]), ui.audit.mod, 'All modules')}</select>
+        <select id="auStatus" class="dm-select" aria-label="Filter by result">${opts([['Success', 'Success'], ['Failed', 'Failed']], ui.audit.status, 'All results')}</select>
+      </div><div id="auTable"></div><p class="dm-foot">Passwords, reset tokens and other secrets are never written to the audit log.</p>`)}`;
+  };
+  const auditRows = () => {
+    const q = ui.audit.q.toLowerCase();
+    return db.audit.filter((a) => (ui.audit.mod === 'all' || a.mod === ui.audit.mod) && (ui.audit.status === 'all' || a.status === ui.audit.status) &&
+      (!q || [a.user, a.act, a.desc, a.mod, a.rec].some((v) => String(v).toLowerCase().includes(q))));
+  };
+  function refreshAudit() {
+    const full = can('audit.full');
+    const list = auditRows();
+    const cols = full ? ['Time', 'User', 'Module', 'Entity / record', 'Action', 'Description', 'Changes', 'IP', 'Result'] : ['Time', 'User', 'Module', 'Action', 'Description', 'Result'];
+    $('#auTable').innerHTML = table(cols, list.slice(0, 100).map((a) => full
+      ? `<tr><td>${esc(a.ts)}</td><td>${esc(a.user)}</td><td>${esc(a.mod)}</td><td>${esc(a.ent)}<br><small>${esc(a.rec)}</small></td><td>${esc(a.act)}</td><td>${esc(a.desc)}</td><td>${a.prev || a.next ? `<small>${esc(a.prev)}<br>\u2192 ${esc(a.next)}</small>` : '\u2014'}</td><td>${esc(a.ip || '\u2014')}</td><td>${badge(a.status)}</td></tr>`
+      : `<tr><td>${esc(a.ts)}</td><td>${esc(a.user)}</td><td>${esc(a.mod)}</td><td>${esc(a.act)}</td><td>${esc(a.desc)}</td><td>${badge(a.status)}</td></tr>`), 'No audit events match.');
+  }
+
+  /* ---------- BACKUPS ---------- */
+  PAGES.backups = () => {
+    const full = can('backup.manage');
+    const b = db.backups, c = b.config;
+    const lastOk = b.history.find((h) => h.status === 'Completed');
+    const tested = b.history.find((h) => h.restoreTested);
+    const cfgCard = full ? card('Backup schedule', `<form id="bkForm" class="staff-form" novalidate>
+        <div class="set-grid-2">
+          ${field('bkFreq', 'Frequency', `<select id="bkFreq" class="dm-select">${opts(['Daily', 'Weekly', 'Monthly'].map((x) => [x, x]), c.frequency)}</select>`)}
+          ${field('bkTime', 'Backup time', `<input id="bkTime" type="time" value="${esc(c.time)}" />`)}
+          ${field('bkType', 'Backup type', `<select id="bkType" class="dm-select">${opts(['Full', 'Incremental', 'Differential'].map((x) => [x, x]), c.type)}</select>`)}
+          ${field('bkRet', 'Retention (days)', `<input id="bkRet" type="number" min="1" max="3650" value="${c.retention}" />`)}
+        </div>
+        ${field('bkLoc', 'Storage location', `<input id="bkLoc" value="${esc(c.location)}" />`, 'Use a protected destination, separate from the production server.')}
+        <label class="check-row staff-check"><input type="checkbox" id="bkOn" ${c.enabled ? 'checked' : ''}/><span>Scheduled backups enabled</span></label>
+        <div class="set-actions"><button type="submit" class="btn-solid">Save schedule</button></div></form>`)
+      : card('Backup schedule', `<dl class="set-info"><div><dt>Frequency</dt><dd>${esc(c.frequency)}</dd></div><div><dt>Time</dt><dd>${fmtTime(c.time)}</dd></div><div><dt>Type</dt><dd>${esc(c.type)}</dd></div><div><dt>Scheduled</dt><dd>${c.enabled ? 'Enabled' : 'Disabled'}</dd></div></dl><p class="dm-foot">Only ICT Services can change the schedule or run backups.</p>`);
+    return `${head(full ? 'Backup Management' : 'Backup Status', full ? 'Schedule backups, run one on demand and confirm that restores actually work.' : 'Read-only status of automated backups.', full ? '<button type="button" class="btn-solid" data-act="bk-run">Run backup now</button>' : '')}
+      <div class="staff-stats">
+        ${stat('LAST SUCCESSFUL', lastOk ? fmtDate(lastOk.end) : '\u2014', lastOk ? `${lastOk.id} \u00B7 ${fmtBytes(lastOk.size)}` : '')}
+        ${stat('LAST RESTORE TEST', tested ? fmtDate(tested.restoreTested) : 'Never', tested ? tested.id : 'A backup is not proven until restored')}
+        ${stat('FAILED (LAST 30 DAYS)', b.history.filter((h) => h.status === 'Failed').length, 'Review the failure reason')}
+        ${stat('SCHEDULE', c.enabled ? c.frequency : 'Off', `${c.type} \u00B7 ${fmtTime(c.time)}`, 'is-blue')}
+      </div>
+      <div class="staff-split">
+        ${card('Backup history', table(full ? ['ID', 'Started', 'Type', 'Size', 'Checksum', 'Status', 'Restore test', ''] : ['ID', 'Started', 'Type', 'Status'],
+          b.history.map((h) => full
+            ? `<tr><td>${esc(h.id)}</td><td>${esc(h.start)}<br><small>by ${esc(h.by)}</small></td><td>${esc(h.type)}</td><td>${h.size ? fmtBytes(h.size) : '\u2014'}</td><td><small>${esc(h.checksum || '\u2014')}</small></td><td>${badge(h.status)}${h.failure ? `<br><small class="dm-note">${esc(h.failure)}</small>` : ''}</td><td>${h.restoreTested ? fmtDate(h.restoreTested) : '\u2014'}</td><td>${h.status === 'Completed' ? `<button type="button" class="btn-light btn-sm" data-act="bk-verify" data-id="${h.id}">Test restore</button>` : ''}</td></tr>`
+            : `<tr><td>${esc(h.id)}</td><td>${esc(h.start)}</td><td>${esc(h.type)}</td><td>${badge(h.status)}</td></tr>`)))}
+        ${cfgCard}
+      </div>`;
+  };
+
+  /* ---------- MONITORING ---------- */
+  PAGES.monitoring = () => {
+    tickMetrics();
+    return `${head('System Monitoring', 'Live health indicators and the event log. Collected automatically; refreshes every few seconds.', '<button type="button" class="btn-light" data-act="mon-refresh">Refresh now</button>')}
+      <div class="staff-metrics" id="stMetrics">${metricsHtml()}</div>
+      ${card('System events', table(['Event', 'Time', 'Module', 'Description', 'Severity', 'Status', ''], db.events.map((e) => `<tr><td>${esc(e.id)}<br><small>${esc(e.type)}</small></td><td>${esc(e.ts)}</td><td>${esc(e.module)}</td><td>${esc(e.desc)}${e.resolved ? `<br><small>Resolved ${esc(e.resolved)} by ${esc(e.by)}</small>` : ''}</td><td>${badge(e.severity)}</td><td>${badge(e.status)}</td><td>${e.status === 'Resolved' ? '' : `<button type="button" class="btn-light btn-sm" data-act="mon-resolve" data-id="${e.id}">Mark resolved</button>`}</td></tr>`)))}`;
+  };
+
+  /* ---------- CLASSES (EdTech: all classes, editable; Faculty: assigned only) ---------- */
+  PAGES.classes = () => {
+    if (me.role === 'FACULTY') {
+      const cls = myClasses();
+      return `${head('My Classes', 'You can only see classes assigned to you.')}
+        <div class="staff-cards">${cls.map((c) => card('', `<div class="staff-class"><span class="dm-stat-label">${esc(c.code)} \u00B7 SECTION ${esc(c.section)}</span><h3>${esc(c.title)}</h3>
+          <dl class="set-info"><div><dt>Schedule</dt><dd>${esc(schedText(c))}</dd></div><div><dt>Room</dt><dd>${esc(c.room)}</dd></div><div><dt>Mode</dt><dd>${esc(c.modality)}</dd></div><div><dt>Enrolled</dt><dd>${c.size} / ${c.capacity}</dd></div></dl>
+          <div class="staff-quick"><button type="button" class="btn-solid btn-sm" data-act="cls-roster" data-id="${c.id}">Class list</button><button type="button" class="btn-light btn-sm" data-act="att-open" data-id="${c.id}">Attendance</button><button type="button" class="btn-light btn-sm" data-act="gr-open" data-id="${c.id}" data-period="Prelim">Grades</button></div></div>`)).join('')}</div>`;
+    }
+    const conflicts = totalConflicts();
+    return `${head('Classes & Schedules', 'Adjust meeting times, rooms and faculty assignment. Changes are checked for room and faculty conflicts.')}
+      <div class="staff-stats">${stat('OFFERINGS', db.classes.length, '1st Semester, AY 2026\u20132027')}${stat('SCHEDULE CONFLICTS', conflicts, conflicts ? 'Needs fixing' : 'None found')}${stat('ROOMS IN USE', new Set(db.classes.map((c) => c.room)).size, `of ${ROOMS.length}`)}${stat('FACULTY ASSIGNED', new Set(db.classes.map((c) => c.faculty)).size, 'With at least one class', 'is-blue')}</div>
+      ${card('', table(['Course', 'Section', 'Faculty', 'Schedule', 'Room', 'Enrolled', 'Status', ''], db.classes.map((c) => { const cf = findConflicts(c); return `<tr><td><strong>${esc(c.code)}</strong><br><small>${esc(c.title)}</small></td><td>${esc(c.section)}</td><td>${esc(userName(c.faculty))}</td><td>${esc(schedText(c))}</td><td>${esc(c.room)}</td><td>${c.size}/${c.capacity}</td><td>${badge(c.status)}${cf.length ? '<br><span class="dm-status risk">Conflict</span>' : ''}</td><td><button type="button" class="btn-light btn-sm" data-act="cls-edit" data-id="${c.id}">Edit</button></td></tr>`; })))}`;
+  };
+  function classForm(c) {
+    const faculty = db.users.filter((u) => u.role === 'FACULTY' && u.status !== 'Suspended' && u.status !== 'Inactive');
+    return `<form id="clsForm" class="staff-form" novalidate>
+      <p class="dm-modal-note"><strong>${esc(c.code)} ${esc(c.section)}</strong> \u2014 ${esc(c.title)}</p>
+      <div class="set-grid-2">
+        ${field('cfFac', 'Assigned faculty', `<select id="cfFac" class="dm-select">${opts(faculty.map((u) => [u.username, u.name]), c.faculty)}</select>`)}
+        ${field('cfRoom', 'Room', `<select id="cfRoom" class="dm-select">${opts(ROOMS.map((r) => [r, r]), c.room)}</select>`)}
+        ${field('cfDay', 'Day', `<select id="cfDay" class="dm-select">${opts(Object.keys(DAY_IDX).map((d) => [d, d]), c.day)}</select>`)}
+        ${field('cfMode', 'Modality', `<select id="cfMode" class="dm-select">${opts(['Face-to-Face', 'Online', 'Hybrid'].map((d) => [d, d]), c.modality)}</select>`)}
+        ${field('cfStart', 'Start time', `<input id="cfStart" type="time" value="${c.start}" />`)}
+        ${field('cfEnd', 'End time', `<input id="cfEnd" type="time" value="${c.end}" />`)}
+      </div></form>`;
+  }
+  function saveClass(c) {
+    const next = Object.assign({}, c, { faculty: $('#cfFac').value, room: $('#cfRoom').value, day: $('#cfDay').value, modality: $('#cfMode').value, start: $('#cfStart').value, end: $('#cfEnd').value });
+    setErr('cfEnd', '');
+    if (!next.start || !next.end || toMin(next.end) <= toMin(next.start)) { setErr('cfEnd', 'End time must be after the start time.'); return false; }
+    const conflicts = findConflicts(next);
+    if (conflicts.length) { setErr('cfEnd', conflicts[0]); return false; }
+    const before = `${c.day} ${c.start}-${c.end} ${c.room} ${c.faculty}`;
+    Object.assign(c, next);
+    save('classes');
+    audit('Scheduling', 'ClassSchedules', c.id, 'UPDATE', `Updated schedule/assignment for ${c.code} ${c.section}`, 'Success', before, `${c.day} ${c.start}-${c.end} ${c.room} ${c.faculty}`);
+    toast('Class updated.'); render();
+    return true;
+  }
+  function rosterModal(c) {
+    openModal({ title: `Class list \u00B7 ${c.code} ${c.section}`, ok: 'Export CSV', cancel: 'Close',
+      body: table(['#', 'Student number', 'Name', 'Program'], ROSTER.map((s, i) => `<tr><td>${i + 1}</td><td>${s.sn}</td><td>${esc(s.name)}</td><td>BSIT</td></tr>`)) + `<p class="dm-foot">Showing ${ROSTER.length} of ${c.size} enrolled students (sample roster).</p>`,
+      onOk: () => { downloadCsv(`Class list ${c.code} ${c.section}`, ['Student number', 'Name', 'Program'], ROSTER.map((s) => [s.sn, s.name, 'BSIT'])); return false; } });
+  }
+
+  /* ---------- ATTENDANCE (Faculty) ---------- */
+  const ATT_STATUS = ['Present', 'Absent', 'Late', 'Excused', 'Left Early'];
+  function attSession(c, date) { const m = db.fac.attendance[c.id] || (db.fac.attendance[c.id] = {}); return m[date]; }
+  function attDraftFor(c, date) {
+    const key = c.id + '|' + date;
+    if (ui.att.key !== key) {
+      const s = attSession(c, date);
+      ui.att.draft = s ? clone(s.rows) : Object.fromEntries(ROSTER.map((r) => [r.sn, { status: 'Present', timeIn: c.start, timeOut: '', remarks: '' }]));
+      ui.att.key = key;
+    }
+    return ui.att.draft;
+  }
+  PAGES.attendance = () => {
+    const cls = myClasses();
+    if (!cls.length) return head('Attendance', 'You have no assigned classes.');
+    if (!cls.some((c) => c.id === ui.att.cls)) ui.att.cls = cls[0].id;
+    const c = cls.find((x) => x.id === ui.att.cls);
+    const dates = meetingDates(c);
+    if (!dates.includes(ui.att.date)) ui.att.date = dates[0];
+    const sess = attSession(c, ui.att.date);
+    const submitted = sess && sess.status === 'Submitted';
+    const draft = attDraftFor(c, ui.att.date);
+    const lock = submitted ? 'disabled' : '';
+    return `${head('Attendance', 'Record attendance for one class meeting. One result per student per meeting.')}
+      ${card('', `<div class="staff-toolbar">
+        <select id="attCls" class="dm-select" aria-label="Class">${opts(cls.map((x) => [x.id, `${x.code} \u00B7 ${x.section}`]), c.id)}</select>
+        <select id="attDate" class="dm-select" aria-label="Meeting date">${opts(dates.map((d) => [d, fmtDateLong(d)]), ui.att.date)}</select>
+        <span class="staff-meta">${esc(schedText(c))} \u00B7 ${esc(c.room)}</span>
+        <span class="staff-spacer"></span>${submitted ? badge('Submitted') : badge('Open')}
+      </div>
+      <div class="staff-summary" id="attSummary"></div>
+      ${table(['#', 'Student number', 'Name', 'Status', 'Time in', 'Time out', 'Late by', 'Remarks'], ROSTER.map((s, i) => { const r = draft[s.sn]; return `<tr data-sn="${s.sn}"><td>${i + 1}</td><td>${s.sn}</td><td>${esc(s.name)}</td>
+        <td><select class="dm-select staff-mini" data-att-f="status" ${lock} aria-label="Status for ${esc(s.name)}">${opts(ATT_STATUS.map((x) => [x, x]), r.status)}</select></td>
+        <td><input type="time" class="staff-mini" data-att-f="timeIn" value="${esc(r.timeIn)}" ${lock} ${['Absent', 'Excused'].includes(r.status) ? 'disabled' : ''} aria-label="Time in" /></td>
+        <td><input type="time" class="staff-mini" data-att-f="timeOut" value="${esc(r.timeOut)}" ${lock} ${['Absent', 'Excused'].includes(r.status) ? 'disabled' : ''} aria-label="Time out" /></td>
+        <td class="att-late" data-late>${lateText(c, r)}</td>
+        <td><input type="text" class="staff-mini staff-wide" data-att-f="remarks" value="${esc(r.remarks)}" ${lock} placeholder="Optional" aria-label="Remarks" /></td></tr>`; }))}
+      <small class="set-error" id="attError"></small>
+      <div class="set-actions">
+        ${submitted ? `<button type="button" class="btn-light" data-act="att-reopen">Reopen to edit</button><span class="staff-meta">Submitted ${esc(sess.recordedAt || '')}</span>`
+          : `<button type="button" class="btn-light" data-act="att-all">Mark all present</button><button type="button" class="btn-light" data-act="att-save">Save draft</button><button type="button" class="btn-solid" data-act="att-submit">Submit attendance</button>`}
+      </div>`)}`;
+  };
+  function lateText(c, r) { if (r.status !== 'Late' || !r.timeIn) return '\u2014'; const m = toMin(r.timeIn) - toMin(c.start); return m > 0 ? `${m} min` : '\u2014'; }
+  function updateAttSummary() {
+    const box = $('#attSummary'); if (!box || !ui.att.draft) return;
+    const counts = Object.fromEntries(ATT_STATUS.map((s) => [s, 0]));
+    Object.values(ui.att.draft).forEach((r) => { counts[r.status]++; });
+    box.innerHTML = ATT_STATUS.map((s) => `<span class="staff-pill">${badge(s)} <strong>${counts[s]}</strong></span>`).join('');
+  }
+  function attValidate(c) {
+    for (const s of ROSTER) {
+      const r = ui.att.draft[s.sn];
+      if (r.status === 'Late' && !r.timeIn) return `${s.name}: enter the time in for a late student.`;
+      if (r.timeIn && r.timeOut && toMin(r.timeOut) < toMin(r.timeIn)) return `${s.name}: time out cannot be earlier than time in.`;
+    }
+    return '';
+  }
+  function attPersist(c, date, status) {
+    const m = db.fac.attendance[c.id] || (db.fac.attendance[c.id] = {});
+    m[date] = { status, rows: clone(ui.att.draft), recordedAt: nowStamp() };
+    persist(K.fac, db.fac);
+  }
+  function evaluateAlerts(c) {
+    const cfg = db.alertCfg; if (!cfg.enabled) return 0;
+    let added = 0;
+    ROSTER.forEach((s) => {
+      let abs = 0, late = 0;
+      Object.values(db.fac.attendance[c.id] || {}).forEach((sess) => { if (sess.status !== 'Submitted') return; const r = sess.rows[s.sn]; if (!r) return; if (r.status === 'Absent') abs++; if (r.status === 'Late') late++; });
+      [['Absence', abs, cfg.maxAbsences, `${abs} absences in ${c.code} ${c.section}`], ['Tardiness', late, cfg.tardiness, `${late} late arrivals in ${c.code} ${c.section}`]].forEach(([type, n, limit, msg]) => {
+        if (n >= limit && !db.fac.alerts.some((a) => a.sn === s.sn && a.cls === c.id && a.type === type && a.count === n)) {
+          db.fac.alerts.unshift({ sn: s.sn, student: s.name, cls: c.id, type, count: n, message: msg + (cfg.notifyGuardian ? ' \u2014 guardian notice queued' : ''), date: isoDate(new Date()) }); added++;
+        }
+      });
+    });
+    if (added) persist(K.fac, db.fac);
+    return added;
+  }
+
+  /* ---------- GRADES (Faculty) ---------- */
+  const assessmentsFor = (cid, period) => db.fac.assessments.filter((a) => a.classId === cid && a.period === period);
+  function periodResult(cid, period, sn) {
+    const list = assessmentsFor(cid, period);
+    const totalW = list.reduce((n, a) => n + a.weight, 0);
+    if (!list.length || !totalW) return { pct: null, complete: false };
+    let earned = 0, complete = true;
+    list.forEach((a) => { const v = (db.fac.scores[a.id] || {})[sn]; if (typeof v !== 'number') complete = false; else earned += (v / a.max) * a.weight; });
+    return { pct: (earned / totalW) * 100, complete };
+  }
+  PAGES.grades = () => {
+    const cls = myClasses();
+    if (!cls.length) return head('Grade Management', 'You have no assigned classes.');
+    if (!cls.some((c) => c.id === ui.gr.cls)) ui.gr.cls = cls[0].id;
+    const c = cls.find((x) => x.id === ui.gr.cls);
+    const list = assessmentsFor(c.id, ui.gr.period);
+    const totalW = list.reduce((n, a) => n + a.weight, 0);
+    const status = db.fac.gradeStatus[`${c.id}|${ui.gr.period}`] || 'Draft';
+    const locked = status !== 'Draft';
+    return `${head('Grade Management', 'Define assessments, encode scores and submit period grades for review. Posting is done by the Registrar.',
+      locked ? '' : '<button type="button" class="btn-solid" data-act="gr-add">+ Add assessment</button>')}
+      ${card('', `<div class="staff-toolbar">
+        <select id="grCls" class="dm-select" aria-label="Class">${opts(cls.map((x) => [x.id, `${x.code} \u00B7 ${x.section}`]), c.id)}</select>
+        <select id="grPeriod" class="dm-select" aria-label="Grading period">${opts(PERIODS.map((p) => [p, p]), ui.gr.period)}</select>
+        <span class="staff-meta">Weights total <strong class="${totalW === 100 ? '' : 'staff-bad'}">${totalW}%</strong>${totalW === 100 || !list.length ? '' : ' (should be 100%)'}</span>
+        <span class="staff-spacer"></span>${badge(status)}
+      </div>
+      ${list.length ? `<div class="dm-table-wrap staff-table-wrap"><table class="dm-table staff-table"><thead><tr><th>Student</th>${list.map((a) => `<th class="num">${esc(a.name)}<br><small>/${a.max} \u00B7 ${a.weight}%</small>${locked ? '' : `<br><button type="button" class="staff-x" data-act="gr-del" data-id="${a.id}" aria-label="Remove ${esc(a.name)}">remove</button>`}</th>`).join('')}<th class="num">${esc(ui.gr.period)} %</th><th class="num">Equivalent</th></tr></thead>
+        <tbody>${ROSTER.map((s) => { const r = periodResult(c.id, ui.gr.period, s.sn); return `<tr data-sn="${s.sn}"><td><strong>${esc(s.name)}</strong><br><small>${s.sn}</small></td>${list.map((a) => { const v = (db.fac.scores[a.id] || {})[s.sn]; return `<td class="num"><input type="number" class="staff-score" min="0" max="${a.max}" step="0.5" value="${typeof v === 'number' ? v : ''}" data-score="${a.id}|${s.sn}" ${locked ? 'disabled' : ''} aria-label="${esc(a.name)} score for ${esc(s.name)}" /></td>`; }).join('')}
+          <td class="num" data-pct>${r.pct === null ? '\u2014' : r.pct.toFixed(1) + '%'}</td><td class="num" data-eq>${r.pct === null || !r.complete ? '\u2014' : toGrade(r.pct).toFixed(2)}</td></tr>`; }).join('')}</tbody></table></div>`
+        : '<p class="dm-empty">No assessments for this period yet. Add a quiz, exam or project to start encoding scores.</p>'}
+      <small class="set-error" id="grError"></small>
+      <div class="set-actions">${locked ? '<button type="button" class="btn-light" data-act="gr-recall">Recall to draft</button><span class="staff-meta">Submitted for Department Head review.</span>' : `<button type="button" class="btn-solid" data-act="gr-submit" ${list.length ? '' : 'disabled'}>Submit ${esc(ui.gr.period)} grades</button>`}</div>
+      <p class="dm-foot">Equivalent grade: 1.00 highest, 3.00 passing (75%), 5.00 failed. A grade shows once every score is encoded.</p>`)}`;
+  };
+  function updateGradeRow(sn) {
+    const tr = $(`tr[data-sn="${sn}"]`, $('#stMain')); if (!tr) return;
+    const r = periodResult(ui.gr.cls, ui.gr.period, sn);
+    $('[data-pct]', tr).textContent = r.pct === null ? '\u2014' : r.pct.toFixed(1) + '%';
+    $('[data-eq]', tr).textContent = r.pct === null || !r.complete ? '\u2014' : toGrade(r.pct).toFixed(2);
+  }
+  function assessmentForm() {
+    return `<form id="asForm" class="staff-form" novalidate>
+      ${field('asName', 'Assessment name', '<input id="asName" placeholder="e.g. Quiz 3" />')}
+      <div class="set-grid-2">
+        ${field('asType', 'Type', `<select id="asType" class="dm-select">${opts(['Quiz', 'Examination', 'Laboratory', 'Project', 'Assignment'].map((x) => [x, x]), 'Quiz')}</select>`)}
+        ${field('asDate', 'Date', `<input id="asDate" type="date" value="${isoDate(new Date())}" />`)}
+        ${field('asMax', 'Maximum score', '<input id="asMax" type="number" min="1" step="0.5" />')}
+        ${field('asWeight', 'Weight (%)', '<input id="asWeight" type="number" min="1" max="100" step="1" />', 'Weights for a period should total 100%.')}
+      </div></form>`;
+  }
+
+  /* ---------- REPORTS ---------- */
+  const attPct = (cid, sn) => { let held = 0, att = 0, exc = 0; Object.values(db.fac.attendance[cid] || {}).forEach((s) => { if (s.status !== 'Submitted' || !s.rows[sn]) return; const st = s.rows[sn].status; held++; if (st === 'Excused') exc++; else if (st !== 'Absent') att++; }); const base = held - exc; return { held, att, pct: base ? (att / base) * 100 : 0 }; };
+  const inRange = (ts) => { const d = String(ts).slice(0, 10); return (!ui.rep.from || d >= ui.rep.from) && (!ui.rep.to || d <= ui.rep.to); };
+  const REPORTS = [
+    { id: 'users', name: 'User Accounts Report', roles: ['ICT_ADMIN'], filters: [], build: () => ({ cols: ['Username', 'Name', 'Email', 'Role', 'Status', 'MFA', 'Failed logins', 'Last login'], rows: db.users.map((u) => [u.username, u.name, u.email, ROLE_LABEL[u.role], u.status, u.mfa ? 'On' : 'Off', u.failed, u.lastLogin || 'Never']) }) },
+    { id: 'roles', name: 'Role Assignment Report', roles: ['ICT_ADMIN'], filters: [], build: () => ({ cols: ['Role', 'Users assigned', 'Permissions granted'], rows: ROLE_ORDER.map((r) => [ROLE_LABEL[r], db.users.filter((u) => u.role === r).length, db.perms[r].join(', ')]) }) },
+    { id: 'audit', name: 'Audit Activity Report', roles: ['ICT_ADMIN'], filters: ['range'], build: () => ({ cols: ['Time', 'User', 'Module', 'Action', 'Description', 'Result'], rows: db.audit.filter((a) => inRange(a.ts)).map((a) => [a.ts, a.user, a.mod, a.act, a.desc, a.status]) }) },
+    { id: 'backups', name: 'Backup History Report', roles: ['ICT_ADMIN'], filters: ['range'], build: () => ({ cols: ['ID', 'Started', 'Type', 'Size', 'Status', 'Restore tested'], rows: db.backups.history.filter((b) => inRange(b.start)).map((b) => [b.id, b.start, b.type, b.size ? fmtBytes(b.size) : '\u2014', b.status, b.restoreTested || '\u2014']) }) },
+    { id: 'events', name: 'System Event Report', roles: ['ICT_ADMIN', 'EDTECH'], filters: ['range'], build: () => ({ cols: ['ID', 'Time', 'Type', 'Module', 'Description', 'Severity', 'Status'], rows: db.events.filter((e) => inRange(e.ts)).map((e) => [e.id, e.ts, e.type, e.module, e.desc, e.severity, e.status]) }) },
+    { id: 'history', name: 'Report Generation History', roles: ['ICT_ADMIN'], filters: [], build: () => ({ cols: ['Generated', 'Report', 'By', 'Records'], rows: db.reports.map((r) => [r.ts, r.name, r.by, r.count]) }) },
+    { id: 'schedule', name: 'Class Schedule Report', roles: ['EDTECH'], filters: [], build: () => ({ cols: ['Course', 'Section', 'Faculty', 'Day', 'Time', 'Room', 'Modality', 'Status'], rows: db.classes.map((c) => [c.code, c.section, userName(c.faculty), c.day, `${fmtTime(c.start)}\u2013${fmtTime(c.end)}`, c.room, c.modality, c.status]) }) },
+    { id: 'assign', name: 'Faculty Teaching Assignment Report', roles: ['EDTECH'], filters: [], build: () => ({ cols: ['Faculty', 'Course', 'Section', 'Enrolled', 'Capacity'], rows: [...db.classes].sort((a, b) => userName(a.faculty).localeCompare(userName(b.faculty))).map((c) => [userName(c.faculty), `${c.code} ${c.title}`, c.section, c.size, c.capacity]) }) },
+    { id: 'rooms', name: 'Room Utilization Report', roles: ['EDTECH'], filters: [], build: () => ({ cols: ['Room', 'Weekly meetings', 'Hours per week', 'Classes'], rows: ROOMS.map((r) => { const l = db.classes.filter((c) => c.room === r); return [r, l.length, (l.reduce((n, c) => n + toMin(c.end) - toMin(c.start), 0) / 60).toFixed(1), l.map((c) => `${c.code} ${c.section}`).join(', ') || '\u2014']; }) }) },
+    { id: 'classlist', name: 'Class List', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['#', 'Student number', 'Name', 'Course', 'Section', 'Faculty'], rows: ROSTER.map((s, i) => [i + 1, s.sn, s.name, c.code, c.section, me.name]) }) },
+    { id: 'daily', name: 'Daily Attendance Report', roles: ['FACULTY'], filters: ['class', 'date'], build: (c) => { const s = attSession(c, ui.rep.date); return { cols: ['Student number', 'Name', 'Status', 'Time in', 'Time out', 'Remarks'], rows: s ? ROSTER.map((r) => { const x = s.rows[r.sn] || {}; return [r.sn, r.name, x.status || '\u2014', x.timeIn || '\u2014', x.timeOut || '\u2014', x.remarks || '']; }) : [] }; } },
+    { id: 'attsum', name: 'Student Attendance Summary', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['Student number', 'Name', 'Sessions', 'Attended', 'Attendance %'], rows: ROSTER.map((s) => { const a = attPct(c.id, s.sn); return [s.sn, s.name, a.held, a.att, a.pct.toFixed(1) + '%']; }) }) },
+    { id: 'gradesrep', name: 'Student Grade Report', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['Student number', 'Name', ...PERIODS.flatMap((p) => [`${p} %`, `${p} grade`]), 'Status'], rows: ROSTER.map((s) => [s.sn, s.name, ...PERIODS.flatMap((p) => { const r = periodResult(c.id, p, s.sn); return [r.pct === null ? '\u2014' : r.pct.toFixed(1), r.pct === null || !r.complete ? '\u2014' : toGrade(r.pct).toFixed(2)]; }), PERIODS.map((p) => `${p}: ${db.fac.gradeStatus[`${c.id}|${p}`] || 'Draft'}`).join(' \u00B7 ')]) }) }
+  ];
+  const myReports = () => REPORTS.filter((r) => r.roles.includes(me.role));
+
+  PAGES.reports = () => {
+    const list = myReports();
+    if (!list.some((r) => r.id === ui.rep.id)) { ui.rep.id = list[0].id; ui.rep.result = null; }
+    const def = list.find((r) => r.id === ui.rep.id);
+    const cls = myClasses();
+    if (me.role === 'FACULTY') {
+      if (!cls.some((c) => c.id === ui.rep.cls)) ui.rep.cls = cls[0] ? cls[0].id : '';
+      const c = cls.find((x) => x.id === ui.rep.cls);
+      if (c && !meetingDates(c).includes(ui.rep.date)) ui.rep.date = meetingDates(c)[1] || meetingDates(c)[0] || '';
+    }
+    const c = cls.find((x) => x.id === ui.rep.cls);
+    const mine = db.reports.filter((r) => me.role === 'ICT_ADMIN' || r.by === me.username).slice(0, 6);
+    return `${head('Reports', me.role === 'FACULTY' ? 'Reports are limited to the classes assigned to you.' : me.role === 'EDTECH' ? 'Operational reports for schedules, assignments and platform events.' : 'Administrative and security reports. Student academic data is not included.')}
+      ${card('Generate a report', `<div class="staff-toolbar">
+        <select id="repId" class="dm-select" aria-label="Report">${opts(list.map((r) => [r.id, r.name]), ui.rep.id)}</select>
+        ${def.filters.includes('class') ? `<select id="repCls" class="dm-select" aria-label="Class">${opts(cls.map((x) => [x.id, `${x.code} \u00B7 ${x.section}`]), ui.rep.cls)}</select>` : ''}
+        ${def.filters.includes('date') && c ? `<select id="repDate" class="dm-select" aria-label="Meeting date">${opts(meetingDates(c).map((d) => [d, fmtDateLong(d)]), ui.rep.date)}</select>` : ''}
+        ${def.filters.includes('range') ? `<label class="staff-inline">From <input type="date" id="repFrom" class="dm-select" value="${esc(ui.rep.from)}" /></label><label class="staff-inline">To <input type="date" id="repTo" class="dm-select" value="${esc(ui.rep.to)}" /></label>` : ''}
+        <button type="button" class="btn-solid" data-act="rep-generate">Generate</button></div>
+        <div id="repOut">${ui.rep.result ? reportPaper(ui.rep.result) : '<p class="dm-empty">Choose a report and press Generate.</p>'}</div>`)}
+      ${mine.length ? card('Recently generated', table(['Generated', 'Report', 'By', 'Records'], mine.map((r) => `<tr><td>${esc(r.ts)}</td><td>${esc(r.name)}</td><td>${esc(r.by)}</td><td>${r.count}</td></tr>`))) : ''}`;
+  };
+  function reportPaper(r) {
+    return `<div class="staff-report-bar"><button type="button" class="btn-light btn-sm" data-act="rep-csv">Export CSV</button><button type="button" class="btn-solid btn-sm" data-act="rep-print">Print / Save as PDF</button></div>
+      <div class="doc-paper staff-paper">${paperHtml(r)}</div>`;
+  }
+  function paperHtml(r) {
+    return `<div class="paper-head"><div class="paper-brand"><span class="paper-mark" aria-hidden="true">B</span><div><strong>BITS-SIMS</strong><small>Student Information Management System</small></div></div><span class="paper-sample">System-generated &middot; Sample data</span></div>
+      <h3 class="paper-title">${esc(r.title.toUpperCase())}</h3><p class="paper-subtitle">${esc(r.sub)}</p>
+      <dl class="paper-info"><div><dt>Generated by</dt><dd>${esc(me.name)}</dd></div><div><dt>Role</dt><dd>${esc(ROLE_LABEL[me.role])}</dd></div><div><dt>Date</dt><dd>${esc(r.ts)}</dd></div><div><dt>Records</dt><dd>${r.rows.length}</dd></div></dl>
+      <table class="paper-table"><thead><tr>${r.cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${r.rows.length ? r.rows.map((row) => `<tr>${row.map((v) => `<td>${esc(v)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${r.cols.length}">No records for the selected filters.</td></tr>`}</tbody></table>`;
+  }
+  function generateReport() {
+    const def = REPORTS.find((r) => r.id === ui.rep.id);
+    const c = db.classes.find((x) => x.id === ui.rep.cls && x.faculty === me.username);
+    if (def.filters.includes('class') && !c) { toast('Choose one of your classes first.', 'error'); return; }
+    const out = def.build(c);
+    const sub = c ? `${c.code} ${c.section} \u00B7 ${c.title}${def.filters.includes('date') ? ' \u00B7 ' + fmtDateLong(ui.rep.date) : ''}` : (ui.rep.from || ui.rep.to ? `${ui.rep.from || 'start'} to ${ui.rep.to || 'today'}` : '1st Semester, AY 2026\u20132027');
+    ui.rep.result = { title: def.name, sub, cols: out.cols, rows: out.rows, ts: nowStamp() };
+    db.reports.unshift({ ts: ui.rep.result.ts, name: def.name, by: me.username, count: out.rows.length });
+    if (db.reports.length > 60) db.reports.length = 60;
+    save('reports');
+    audit('Reports', 'GeneratedReports', def.id, 'EXPORT', `Generated ${def.name} (${out.rows.length} records)`);
+    render();
+  }
+
+  function downloadCsv(name, cols, rows) {
+    const cell = (v) => { const t = String(v === undefined || v === null ? '' : v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const csv = [cols, ...rows].map((r) => r.map(cell).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a'); a.href = url; a.download = `BITS-SIMS ${name}.csv`; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function printReport() {
+    const box = document.createElement('div');
+    box.id = 'stPrint'; box.className = 'doc-paper'; box.innerHTML = paperHtml(ui.rep.result);
+    document.body.appendChild(box); document.body.classList.add('staff-printing');
+    const done = () => { box.remove(); document.body.classList.remove('staff-printing'); window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    toast('Choose \u201CSave as PDF\u201D in the print dialog.', 'info');
+    setTimeout(() => window.print(), 200);
+  }
+
+  /* ---------- SYSTEM SETTINGS (ICT) ---------- */
+  PAGES.settings = () => {
+    const p = db.policy, a = db.alertCfg;
+    return `${head('System Settings', 'Security policy and attendance alert rules. Changes apply immediately and are audited.')}
+      <div class="staff-split">
+        <form id="polForm" class="dash-card dm-card staff-card staff-form" novalidate>
+          <h3 class="adm-sec-title">Security policy</h3>
+          <div class="set-grid-2">
+            ${field('plFail', 'Failed logins before lockout', `<input id="plFail" type="number" min="3" max="10" value="${p.maxFailed}" />`)}
+            ${field('plLock', 'Lockout duration (minutes)', `<input id="plLock" type="number" min="1" max="1440" value="${p.lockMin}" />`)}
+            ${field('plMin', 'Minimum password length', `<input id="plMin" type="number" min="8" max="64" value="${p.minPw}" />`)}
+            ${field('plIdle', 'Session timeout (minutes)', `<input id="plIdle" type="number" min="5" max="240" value="${p.timeoutMin}" />`, 'Staff are signed out after this much inactivity.')}
+          </div>
+          <div class="set-actions"><button type="submit" class="btn-solid">Save policy</button></div>
+        </form>
+        <form id="alForm" class="dash-card dm-card staff-card staff-form" novalidate>
+          <h3 class="adm-sec-title">Attendance alert rules</h3>
+          <div class="set-grid-2">
+            ${field('alAbs', 'Absences before an alert', `<input id="alAbs" type="number" min="1" max="20" value="${a.maxAbsences}" />`)}
+            ${field('alLate', 'Late arrivals before an alert', `<input id="alLate" type="number" min="1" max="20" value="${a.tardiness}" />`)}
+          </div>
+          <label class="check-row staff-check"><input type="checkbox" id="alG" ${a.notifyGuardian ? 'checked' : ''}/><span>Notify guardian</span></label>
+          <label class="check-row staff-check"><input type="checkbox" id="alF" ${a.notifyFaculty ? 'checked' : ''}/><span>Notify faculty</span></label>
+          <label class="check-row staff-check"><input type="checkbox" id="alR" ${a.notifyRegistrar ? 'checked' : ''}/><span>Notify Registrar</span></label>
+          <label class="check-row staff-check"><input type="checkbox" id="alOn" ${a.enabled ? 'checked' : ''}/><span>Alert rules enabled</span></label>
+          <p class="dm-foot">Which recipients and thresholds apply is a school decision; these are starting values.</p>
+          <div class="set-actions"><button type="submit" class="btn-solid">Save alert rules</button></div>
+        </form>
+      </div>`;
+  };
+
+  /* ---------- MY ACCOUNT (all staff) ---------- */
+  PAGES.account = () => {
+    const rec = db.users.find((u) => u.username === me.username) || {};
+    return `${head('My Account', 'Your staff profile is managed by ICT Services. You can change your own password here.')}
+      <div class="staff-split staff-split-even">
+        ${card('', `<div class="staff-identity"><div class="staff-big-avatar">${esc(initials(me.name))}</div><h3>${esc(me.name)}</h3><p class="dm-modal-note">${esc(me.title)}</p></div>
+          <dl class="set-info">
+            <div><dt>Role</dt><dd>${esc(ROLE_LABEL[me.role])}</dd></div><div><dt>Employee no.</dt><dd>${esc(me.employeeNo)}</dd></div>
+            <div><dt>Department</dt><dd>${esc(me.dept)}</dd></div><div><dt>Work email</dt><dd>${esc(me.email)}</dd></div>
+            <div><dt>Contact</dt><dd>${esc(me.contact)}</dd></div><div><dt>Date hired</dt><dd>${fmtDate(me.hired)}</dd></div>
+            <div><dt>Account status</dt><dd>${esc(rec.status || 'Active')}</dd></div><div><dt>Last login</dt><dd>${esc(rec.lastLogin || '\u2014')}</dd></div>
+          </dl>`)}
+        <form id="pwForm" class="dash-card dm-card staff-card staff-form" novalidate>
+          <h3 class="adm-sec-title">Change password</h3>
+          ${field('spCur', 'Current password', '<input id="spCur" type="password" autocomplete="current-password" />')}
+          ${field('spNew', 'New password', '<input id="spNew" type="password" autocomplete="new-password" />', `At least ${db.policy.minPw} characters with upper and lower case letters, a number and a symbol.`)}
+          ${field('spConf', 'Confirm new password', '<input id="spConf" type="password" autocomplete="new-password" />')}
+          <div class="pw-meter-row"><div class="pw-meter" id="spMeter" data-level="0"><span></span></div><small id="spMeterLabel"></small></div>
+          <div class="set-actions"><button type="submit" class="btn-solid">Update password</button></div>
+        </form>
+      </div>`;
+  };
+  const pwScore = (pw) => { if (!pw) return 0; let s = 0; if (pw.length >= db.policy.minPw) s++; if (pw.length >= 12) s++; if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s++; if (/\d/.test(pw) && /[^A-Za-z0-9]/.test(pw)) s++; return Math.max(1, s); };
+
+  /* =====================================================
+     EVENTS
+  ===================================================== */
+  function onClick(e) {
+    const navEl = e.target.closest('[data-nav]');
+    if (navEl) { e.preventDefault(); go(navEl.dataset.nav); return; }
+    const el = e.target.closest('[data-act]');
+    if (!el) return;
+    e.preventDefault();
+    const id = el.dataset.id;
+    switch (el.dataset.act) {
+      case 'logout': close(); break;
+      case 'modal-close': closeModal(); break;
+      case 'modal-ok': { const r = modalOk ? modalOk() : undefined; if (r !== false) closeModal(); break; }
+
+      case 'acct-add': if (!can('accounts.manage')) break; openModal({ title: 'New account', body: accountForm(null), ok: 'Create account', onOk: () => saveAccount(null) }); break;
+      case 'acct-edit': { const u = db.users.find((x) => x.id === Number(id)); if (u && can('accounts.manage')) openModal({ title: `Edit ${u.username}`, body: accountForm(u), onOk: () => saveAccount(u) }); break; }
+      case 'acct-reset': { const u = db.users.find((x) => x.id === Number(id)); if (!u || (!can('accounts.manage') && u.role === 'ICT_ADMIN')) break; ask('Reset password?', `Issue a temporary password for ${u.name}? Their current password stops working.`, 'Issue code', () => resetPassword(u)); break; }
+      case 'acct-unlock': { const u = db.users.find((x) => x.id === Number(id)); if (!u || (!can('accounts.manage') && u.role === 'ICT_ADMIN')) break; u.status = 'Active'; u.failed = 0; u.lockoutUntil = ''; delete db.locks[u.username]; save('users', 'locks'); audit('User Accounts', 'Users', 'U-' + u.id, 'UPDATE', `Unlocked account ${u.username}`, 'Success', 'status: Locked', 'status: Active'); toast(`${u.username} unlocked.`); render(); break; }
+      case 'acct-toggle': { const u = db.users.find((x) => x.id === Number(id)); if (!u || !can('accounts.manage') || u.username === me.username) break; const susp = u.status !== 'Suspended';
+        ask(susp ? 'Suspend account?' : 'Reactivate account?', susp ? `${u.name} will no longer be able to sign in. Their records are kept.` : `${u.name} will be able to sign in again.`, susp ? 'Suspend' : 'Reactivate', () => { const before = u.status; u.status = susp ? 'Suspended' : 'Active'; save('users'); audit('User Accounts', 'Users', 'U-' + u.id, 'UPDATE', `${susp ? 'Suspended' : 'Reactivated'} account ${u.username}`, 'Success', 'status: ' + before, 'status: ' + u.status); toast(`Account ${susp ? 'suspended' : 'reactivated'}.`, susp ? 'info' : 'success'); render(); }, susp); break; }
+
+      case 'roles-save': if (!rolesDraft || !can('roles.manage')) break;
+        if (!rolesDraft.ICT_ADMIN.includes('ROLE_MANAGE') || !rolesDraft.ICT_ADMIN.includes('USER_MANAGE')) { toast('ICT Services must keep USER_MANAGE and ROLE_MANAGE.', 'error'); break; }
+        { const diffs = []; ROLE_ORDER.forEach((r) => PERMISSIONS.forEach(([p]) => { const a = db.perms[r].includes(p), b = rolesDraft[r].includes(p); if (a !== b) diffs.push(`${b ? '+' : '-'}${p} (${r})`); }));
+          db.perms = rolesDraft; rolesDraft = null; save('perms'); audit('Roles', 'RolePermissions', 'MATRIX', 'UPDATE', `Updated ${diffs.length} permission(s)`, 'Success', '', diffs.join(', ')); toast('Permissions saved.'); render(); }
+        break;
+      case 'roles-discard': rolesDraft = null; render(); break;
+
+      case 'audit-export': if (!can('audit.full')) break; downloadCsv('Audit Trail', ['Time', 'User', 'Module', 'Entity', 'Record', 'Action', 'Description', 'Previous', 'New', 'IP', 'Result'], auditRows().map((a) => [a.ts, a.user, a.mod, a.ent, a.rec, a.act, a.desc, a.prev, a.next, a.ip, a.status])); audit('Audit', 'AuditLogs', 'EXPORT', 'EXPORT', 'Exported audit trail to CSV'); break;
+
+      case 'bk-run': { if (!can('backup.manage')) break; const n = db.backups.history.length ? parseInt(db.backups.history[0].id.split('-')[1], 10) + 1 : 1; const entry = { id: 'BK-' + pad(n).padStart(4, '0'), type: db.backups.config.type, start: nowStamp(), end: '', size: 0, status: 'Running', checksum: '', by: me.username, restoreTested: '', failure: '' };
+        db.backups.history.unshift(entry); save('backups'); toast('Backup started\u2026', 'info'); render();
+        setTimeout(() => { entry.status = 'Completed'; entry.end = nowStamp(); entry.size = 1288000000 + Math.floor(Math.random() * 40000000); entry.checksum = 'sha256:' + Math.random().toString(16).slice(2, 6) + '\u2026' + Math.random().toString(16).slice(2, 6); save('backups'); audit('Backup', 'BackupHistory', entry.id, 'BACKUP', 'Manual backup completed'); if (page === 'backups' && root) { render(); toast(`${entry.id} completed.`); } }, 1800); break; }
+      case 'bk-verify': { const h = db.backups.history.find((x) => x.id === id); if (!h || !can('backup.manage')) break; ask('Test restore?', `Restore ${h.id} into a scratch database and verify its checksum. Production data is not touched.`, 'Run test', () => { h.restoreTested = isoDate(new Date()); save('backups'); audit('Backup', 'BackupHistory', h.id, 'UPDATE', `Restore test passed for ${h.id}`); toast(`Restore test passed for ${h.id}.`); render(); }); break; }
+
+      case 'mon-refresh': tickMetrics(true); break;
+      case 'mon-resolve': { const ev = db.events.find((x) => x.id === id); if (!ev) break; ev.status = 'Resolved'; ev.by = me.username; ev.resolved = nowStamp(); save('events'); audit('Monitoring', 'SystemEvents', ev.id, 'UPDATE', `Resolved ${ev.id}`); toast(`${ev.id} marked resolved.`); render(); break; }
+
+      case 'cls-edit': { const c = db.classes.find((x) => x.id === id); if (c && can('classes.edit')) openModal({ title: 'Edit schedule & assignment', body: classForm(c), onOk: () => saveClass(c) }); break; }
+      case 'cls-roster': { const c = myClasses().find((x) => x.id === id); if (c) rosterModal(c); break; }
+
+      case 'att-open': { ui.att.cls = id; ui.att.key = ''; ui.att.date = ''; go('attendance'); break; }
+      case 'att-all': { const c = myClasses().find((x) => x.id === ui.att.cls); Object.values(ui.att.draft).forEach((r) => { r.status = 'Present'; r.timeIn = c.start; r.timeOut = ''; }); render(); break; }
+      case 'att-save': { const c = myClasses().find((x) => x.id === ui.att.cls); const err = attValidate(c); $('#attError').textContent = err; if (err) break; attPersist(c, ui.att.date, 'Open'); toast('Draft saved.', 'info'); break; }
+      case 'att-submit': { const c = myClasses().find((x) => x.id === ui.att.cls); const err = attValidate(c); $('#attError').textContent = err; if (err) break;
+        attPersist(c, ui.att.date, 'Submitted'); const n = evaluateAlerts(c);
+        audit('Attendance', 'AttendanceSessions', `${c.code}|${ui.att.date}`, 'APPROVE', `Attendance submitted for ${c.code} ${c.section}`);
+        toast(n ? `Attendance submitted. ${n} alert(s) triggered.` : 'Attendance submitted.'); render(); break; }
+      case 'att-reopen': { const c = myClasses().find((x) => x.id === ui.att.cls); ask('Reopen attendance?', 'Edits to submitted attendance are recorded in the audit trail.', 'Reopen', () => { attSession(c, ui.att.date).status = 'Open'; persist(K.fac, db.fac); audit('Attendance', 'AttendanceSessions', `${c.code}|${ui.att.date}`, 'UPDATE', 'Reopened submitted attendance for editing'); render(); }); break; }
+
+      case 'gr-open': { ui.gr.cls = id; ui.gr.period = el.dataset.period || 'Prelim'; go('grades'); break; }
+      case 'gr-add': openModal({ title: `Add ${ui.gr.period} assessment`, body: assessmentForm(), ok: 'Add assessment', onOk: () => {
+        const name = $('#asName').value.trim(), max = Number($('#asMax').value), weight = Number($('#asWeight').value); let ok = true;
+        ['asName', 'asMax', 'asWeight'].forEach((i) => setErr(i, ''));
+        if (!name) { setErr('asName', 'Name is required.'); ok = false; }
+        if (!(max > 0)) { setErr('asMax', 'Enter a maximum score above 0.'); ok = false; }
+        if (!(weight > 0 && weight <= 100)) { setErr('asWeight', 'Weight must be 1\u2013100.'); ok = false; }
+        if (!ok) return false;
+        db.fac.assessments.push({ id: `A-${ui.gr.cls}-${Date.now()}`, classId: ui.gr.cls, period: ui.gr.period, name, type: $('#asType').value, max, weight, date: $('#asDate').value });
+        persist(K.fac, db.fac); audit('Grades', 'Assessments', name, 'CREATE', `Added assessment ${name} (${weight}%)`); toast('Assessment added.'); render(); return true; } }); break;
+      case 'gr-del': { const a = db.fac.assessments.find((x) => x.id === id); if (!a) break; ask('Remove assessment?', `Remove \u201C${a.name}\u201D and all scores recorded for it?`, 'Remove', () => { db.fac.assessments = db.fac.assessments.filter((x) => x.id !== id); delete db.fac.scores[id]; persist(K.fac, db.fac); audit('Grades', 'Assessments', a.name, 'DELETE', `Removed assessment ${a.name}`); render(); }, true); break; }
+      case 'gr-submit': { const list = assessmentsFor(ui.gr.cls, ui.gr.period); const totalW = list.reduce((n, a) => n + a.weight, 0); let err = '';
+        if (totalW !== 100) err = `Assessment weights total ${totalW}%. They must total 100% before submitting.`;
+        else if (ROSTER.some((s) => list.some((a) => typeof (db.fac.scores[a.id] || {})[s.sn] !== 'number'))) err = 'Every student needs a score for every assessment before you can submit.';
+        $('#grError').textContent = err; if (err) break;
+        ask('Submit grades?', `Submit ${ui.gr.period} grades for review? You won\u2019t be able to edit scores unless you recall them.`, 'Submit', () => { db.fac.gradeStatus[`${ui.gr.cls}|${ui.gr.period}`] = 'Submitted'; persist(K.fac, db.fac); audit('Grades', 'StudentGrades', `${ui.gr.cls}|${ui.gr.period}`, 'APPROVE', `Submitted ${ui.gr.period} grades`); toast('Grades submitted for review.'); render(); }); break; }
+      case 'gr-recall': ask('Recall to draft?', 'The submission is withdrawn so you can edit scores again.', 'Recall', () => { db.fac.gradeStatus[`${ui.gr.cls}|${ui.gr.period}`] = 'Draft'; persist(K.fac, db.fac); audit('Grades', 'StudentGrades', `${ui.gr.cls}|${ui.gr.period}`, 'UPDATE', `Recalled ${ui.gr.period} grades to draft`); render(); }); break;
+
+      case 'rep-generate': generateReport(); break;
+      case 'rep-csv': if (ui.rep.result) { downloadCsv(ui.rep.result.title, ui.rep.result.cols, ui.rep.result.rows); audit('Reports', 'GeneratedReports', ui.rep.id, 'EXPORT', `Exported ${ui.rep.result.title} to CSV`); } break;
+      case 'rep-print': if (ui.rep.result) printReport(); break;
+      default: break;
+    }
+  }
+
+  function onChange(e) {
+    const t = e.target;
+    if (t.dataset.perm) {
+      if (!can('roles.manage')) return;
+      if (!rolesDraft) rolesDraft = clone(db.perms);
+      const [r, p] = t.dataset.perm.split('|');
+      rolesDraft[r] = t.checked ? [...new Set([...rolesDraft[r], p])] : rolesDraft[r].filter((x) => x !== p);
+      const btn = $('[data-act="roles-save"]'); if (btn) btn.disabled = false;
+      return;
+    }
+    if (t.dataset.attF) {
+      const sn = t.closest('tr').dataset.sn, r = ui.att.draft[sn], c = myClasses().find((x) => x.id === ui.att.cls);
+      r[t.dataset.attF] = t.value;
+      if (t.dataset.attF === 'status') {
+        if (['Absent', 'Excused'].includes(t.value)) { r.timeIn = ''; r.timeOut = ''; } else if (!r.timeIn) r.timeIn = c.start;
+        const tr = t.closest('tr');
+        $$('input[type="time"]', tr).forEach((i) => { i.disabled = ['Absent', 'Excused'].includes(t.value); i.value = i.dataset.attF === 'timeIn' ? r.timeIn : r.timeOut; });
+      }
+      t.closest('tr').querySelector('[data-late]').textContent = lateText(c, r);
+      updateAttSummary();
+      return;
+    }
+    if (t.dataset.score) {
+      const [aid, sn] = t.dataset.score.split('|'); const a = db.fac.assessments.find((x) => x.id === aid);
+      if (t.value === '') delete db.fac.scores[aid][sn];
+      else { const v = Number(t.value); if (!(v >= 0 && v <= a.max)) { toast(`Score must be between 0 and ${a.max}.`, 'error'); t.value = typeof db.fac.scores[aid][sn] === 'number' ? db.fac.scores[aid][sn] : ''; return; } db.fac.scores[aid][sn] = v; }
+      persist(K.fac, db.fac); updateGradeRow(sn);
+      return;
+    }
+    switch (t.id) {
+      case 'acctStatus': ui.acct.status = t.value; refreshAccounts(); break;
+      case 'acctRole': ui.acct.role = t.value; refreshAccounts(); break;
+      case 'auMod': ui.audit.mod = t.value; refreshAudit(); break;
+      case 'auStatus': ui.audit.status = t.value; refreshAudit(); break;
+      case 'attCls': ui.att.cls = t.value; ui.att.key = ''; ui.att.date = ''; render(); break;
+      case 'attDate': ui.att.date = t.value; render(); break;
+      case 'grCls': ui.gr.cls = t.value; render(); break;
+      case 'grPeriod': ui.gr.period = t.value; render(); break;
+      case 'repId': ui.rep.id = t.value; ui.rep.result = null; render(); break;
+      case 'repCls': ui.rep.cls = t.value; ui.rep.result = null; render(); break;
+      case 'repDate': ui.rep.date = t.value; ui.rep.result = null; break;
+      case 'repFrom': ui.rep.from = t.value; break;
+      case 'repTo': ui.rep.to = t.value; break;
+      default: break;
+    }
+  }
+
+  function onInput(e) {
+    const t = e.target;
+    if (t.id === 'acctQ') { ui.acct.q = t.value; refreshAccounts(); }
+    else if (t.id === 'auQ') { ui.audit.q = t.value; refreshAudit(); }
+    else if (t.id === 'spNew') { const l = pwScore(t.value); $('#spMeter').dataset.level = l; $('#spMeterLabel').textContent = t.value ? ['', 'Weak', 'Fair', 'Good', 'Strong'][l] : ''; }
+  }
+
+  function onSubmit(e) {
+    e.preventDefault();
+    const id = e.target.id;
+    if (id === 'bkForm' && can('backup.manage')) {
+      const ret = Number($('#bkRet').value); setErr('bkRet', ''); setErr('bkLoc', '');
+      if (!(ret >= 1)) { setErr('bkRet', 'Enter a retention of at least 1 day.'); return; }
+      if (!$('#bkLoc').value.trim()) { setErr('bkLoc', 'A storage location is required.'); return; }
+      db.backups.config = { frequency: $('#bkFreq').value, time: $('#bkTime').value || '02:00', type: $('#bkType').value, location: $('#bkLoc').value.trim(), retention: ret, enabled: $('#bkOn').checked };
+      save('backups'); audit('Backup', 'BackupConfigurations', 'CFG', 'UPDATE', 'Updated backup schedule'); toast('Backup schedule saved.'); render();
+    } else if (id === 'polForm' && can('config')) {
+      const v = { maxFailed: Number($('#plFail').value), lockMin: Number($('#plLock').value), minPw: Number($('#plMin').value), timeoutMin: Number($('#plIdle').value) };
+      ['plFail', 'plLock', 'plMin', 'plIdle'].forEach((i) => setErr(i, ''));
+      let ok = true;
+      if (!(v.maxFailed >= 3 && v.maxFailed <= 10)) { setErr('plFail', 'Use 3\u201310.'); ok = false; }
+      if (!(v.lockMin >= 1)) { setErr('plLock', 'At least 1 minute.'); ok = false; }
+      if (!(v.minPw >= 8)) { setErr('plMin', 'Minimum is 8.'); ok = false; }
+      if (!(v.timeoutMin >= 5)) { setErr('plIdle', 'At least 5 minutes.'); ok = false; }
+      if (!ok) return;
+      db.policy = v; save('policy'); audit('System', 'SystemConfiguration', 'SECURITY', 'UPDATE', 'Updated security policy', 'Success', '', JSON.stringify(v)); toast('Security policy saved.');
+    } else if (id === 'alForm' && can('config')) {
+      const v = { maxAbsences: Number($('#alAbs').value), tardiness: Number($('#alLate').value), notifyGuardian: $('#alG').checked, notifyFaculty: $('#alF').checked, notifyRegistrar: $('#alR').checked, enabled: $('#alOn').checked };
+      ['alAbs', 'alLate'].forEach((i) => setErr(i, ''));
+      if (!(v.maxAbsences >= 1)) { setErr('alAbs', 'Enter 1 or more.'); return; }
+      if (!(v.tardiness >= 1)) { setErr('alLate', 'Enter 1 or more.'); return; }
+      db.alertCfg = v; save('alertCfg'); audit('System', 'AttendanceAlertSettings', 'ALERT', 'UPDATE', 'Updated attendance alert rules', 'Success', '', JSON.stringify(v)); toast('Alert rules saved.');
+    } else if (id === 'pwForm') {
+      ['spCur', 'spNew', 'spConf'].forEach((i) => setErr(i, ''));
+      const cur = $('#spCur').value, nw = $('#spNew').value, conf = $('#spConf').value; let ok = true;
+      if (hash(cur) !== (db.pw[me.username] || me.pwHash)) { setErr('spCur', 'Current password is incorrect.'); ok = false; }
+      if (nw.length < db.policy.minPw || !/[a-z]/.test(nw) || !/[A-Z]/.test(nw) || !/\d/.test(nw) || !/[^A-Za-z0-9]/.test(nw)) { setErr('spNew', `Use ${db.policy.minPw}+ characters with upper and lower case letters, a number and a symbol.`); ok = false; }
+      else if (nw === cur) { setErr('spNew', 'Choose a password different from the current one.'); ok = false; }
+      if (conf !== nw) { setErr('spConf', 'Passwords do not match.'); ok = false; }
+      if (!ok) return;
+      db.pw[me.username] = hash(nw); save('pw');
+      const rec = db.users.find((u) => u.username === me.username); if (rec) { rec.mustChange = false; save('users'); }
+      audit('Authentication', 'Users', me.username, 'UPDATE', 'Changed own password'); e.target.reset(); $('#spMeter').dataset.level = 0; $('#spMeterLabel').textContent = ''; toast('Password updated.');
+    }
+  }
+
+  /* =====================================================
+     OPEN / CLOSE
+  ===================================================== */
+  function markActive() { lastActive = Date.now(); }
+  function open(account) {
+    me = account;
+    page = 'dashboard'; rolesDraft = null; metrics = null;
+    ui.att.key = ''; ui.att.cls = ''; ui.att.date = ''; ui.gr.cls = ''; ui.rep.id = ''; ui.rep.result = null;
+    buildShell();
+    root.classList.remove('hidden');
+    audit('Authentication', 'Users', me.username, 'LOGIN', 'Successful login');
+    go('dashboard');
+    ['click', 'keydown', 'mousemove'].forEach((ev) => document.addEventListener(ev, markActive, { passive: true }));
+    markActive();
+    idleTimer = setInterval(() => {
+      if (Date.now() - lastActive > db.policy.timeoutMin * 60000) { close(); window.alert('You were signed out after a period of inactivity.'); }
+    }, 15000);
+  }
+
+  function close() {
+    if (!me) return;
+    audit('Authentication', 'Users', me.username, 'LOGOUT', 'Signed out');
+    clearInterval(monTimer); clearInterval(idleTimer);
+    ['click', 'keydown', 'mousemove'].forEach((ev) => document.removeEventListener(ev, markActive));
+    if (root) { root.classList.add('hidden'); root.innerHTML = ''; }
+    me = null;
+    const loginForm = $('#loginForm'); if (loginForm) loginForm.reset();
+    const loginView = $('#loginView'); if (loginView) loginView.classList.remove('hidden');
+  }
+
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && root && $('#stModal') && !$('#stModal').classList.contains('hidden')) closeModal(); });
+
+  window.SIMSStaff = { isStaffUser, authenticate, open, close };
+})();

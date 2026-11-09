@@ -1,0 +1,226 @@
+/* =========================================================
+   BITS-SIMS - STAFF PORTALS (ICT Services, EdTech, Faculty)
+   Builds on the shared look in style.css (same blue palette,
+   cards, tables, modal and toast). Everything here is prefixed
+   "staff-" so it never touches the student or registrar views.
+   ========================================================= */
+
+/* ---- Top bar extras ---- */
+.staff-role-chip {
+  margin-left: 0.4rem;
+  padding: 0.2rem 0.75rem;
+  background-color: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.user-avatar-badge.staff-avatar {
+  color: var(--blue);
+  font-size: 0.95rem;
+  font-weight: 800;
+  padding: 0;
+}
+
+/* ---- Page shell ---- */
+.staff-panel { gap: 1.1rem; }
+
+.staff-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.staff-stat { display: flex; flex-direction: column; gap: 0.2rem; padding: 1rem 1.2rem; }
+.staff-stat .dm-stat-value { font-size: 1.8rem; word-break: break-word; }
+.staff-stat.is-blue { background-color: var(--blue); border: none; }
+.staff-stat.is-blue .dm-stat-label,
+.staff-stat.is-blue .dm-stat-value,
+.staff-stat.is-blue .dm-stat-sub { color: #ffffff; }
+
+.staff-card { display: flex; flex-direction: column; gap: 0.9rem; padding: 1.1rem 1.25rem; min-width: 0; }
+
+.staff-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+.staff-split-even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.staff-stack { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.staff-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
+
+/* ---- Toolbar / filters ---- */
+.staff-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; }
+.staff-toolbar .dm-select { width: auto; min-width: 150px; }
+.staff-search { flex: 1; min-width: 220px; }
+.staff-spacer { flex: 1; }
+.staff-meta { font-size: 0.74rem; color: #4a5a6a; }
+.staff-inline { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.74rem; color: #2c3e50; font-weight: 600; }
+.staff-quick { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.staff-bad { color: #c62828; }
+
+/* ---- Tables ---- */
+.staff-table-wrap { max-height: 560px; overflow: auto; }
+.staff-table { min-width: 620px; }
+.staff-table th { position: sticky; top: 0; z-index: 1; }
+.staff-table .num { text-align: center; }
+.staff-table td small { color: #6b7a8c; font-size: 0.68rem; }
+.staff-table td code { font-size: 0.72rem; color: #17356b; }
+.staff-actions { white-space: nowrap; text-align: right; }
+.staff-actions .btn-sm { margin: 0.1rem 0 0.1rem 0.25rem; }
+.staff-group td {
+  background-color: #e3ecf7;
+  color: #17356b;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.staff-matrix input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--blue); cursor: pointer; }
+.staff-matrix input:disabled { cursor: not-allowed; opacity: 0.7; }
+.staff-x {
+  margin-top: 0.15rem;
+  padding: 0;
+  background: none;
+  border: none;
+  color: #ffd2cf;
+  font-size: 0.64rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---- Lists / bars ---- */
+.staff-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+.staff-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background-color: #e3ecf7;
+  border-radius: 0.5rem;
+}
+.staff-list strong { display: block; font-size: 0.78rem; color: #2c3e50; }
+.staff-list small { display: block; font-size: 0.68rem; color: #4a5a6a; margin-top: 0.1rem; }
+
+.staff-bars { list-style: none; display: flex; flex-direction: column; gap: 0.55rem; }
+.staff-bars li { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr) 1.6rem; align-items: center; gap: 0.6rem; font-size: 0.74rem; color: #2c3e50; }
+.staff-bars strong { text-align: right; }
+.staff-bar { height: 8px; background-color: #d3deeb; border-radius: 999px; overflow: hidden; }
+.staff-bar span { display: block; height: 100%; background-color: var(--blue); border-radius: 999px; }
+
+/* ---- Monitoring ---- */
+.staff-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.staff-metric { display: flex; flex-direction: column; gap: 0.35rem; padding: 1rem 1.2rem; }
+.staff-metric .dm-stat-value small { font-size: 0.9rem; font-weight: 600; margin-left: 0.15rem; color: #4a5a6a; }
+.staff-meter { display: block; height: 7px; background-color: #d3deeb; border-radius: 999px; overflow: hidden; }
+.staff-meter span { display: block; height: 100%; border-radius: 999px; background-color: #2e7d32; transition: width 0.4s ease; }
+.staff-meter.warning span { background-color: #e6a100; }
+.staff-meter.critical span { background-color: #c62828; }
+
+/* ---- Forms / modals ---- */
+.staff-form { display: flex; flex-direction: column; gap: 0.8rem; width: 100%; }
+.staff-modal-card { width: min(640px, 100%); }
+.staff-modal-card .modal-body { align-items: stretch; }
+.staff-check { margin-top: 0; font-size: 0.78rem; color: #2c3e50; }
+.staff-check input { accent-color: var(--blue); }
+.staff-ask { font-size: 0.85rem; color: #2c3e50; }
+.staff-code {
+  width: 100%;
+  padding: 0.9rem;
+  text-align: center;
+  background-color: #eef3f9;
+  border: 2px dashed var(--blue);
+  border-radius: 0.5rem;
+  color: #17356b;
+  font: 800 1.25rem/1 ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  letter-spacing: 0.08em;
+  user-select: all;
+}
+.staff-form .dm-select { background-color: #e6ecf4; }
+.staff-form input[type="date"],
+.staff-form input[type="time"],
+.staff-form input[type="number"] { width: 100%; }
+.set-field input[aria-invalid="true"],
+.set-field select[aria-invalid="true"] { border-color: #d9534f; background-color: #fff5f4; }
+.modal-body .set-field input,
+.modal-body .set-field select {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  background-color: #e6ecf4;
+  color: #2c3e50;
+  border: 2px solid transparent;
+  border-radius: 0.4rem;
+  font-size: 0.82rem;
+  outline: none;
+}
+.modal-body .set-field input:focus,
+.modal-body .set-field select:focus { background-color: #ffffff; border-color: var(--blue); }
+
+/* ---- Attendance & grades ---- */
+.staff-summary { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.staff-pill { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.5rem 0.2rem 0.2rem; background-color: #f2f6fb; border-radius: 999px; font-size: 0.74rem; }
+.staff-mini { width: 100%; min-width: 96px; padding: 0.35rem 0.45rem; font-size: 0.74rem; background-color: #e6ecf4; border: 2px solid transparent; border-radius: 0.35rem; color: #2c3e50; outline: none; }
+.staff-mini:focus { background-color: #ffffff; border-color: var(--blue); }
+.staff-mini:disabled { opacity: 0.55; cursor: not-allowed; }
+.staff-wide { min-width: 160px; }
+.staff-score { width: 70px; padding: 0.35rem 0.4rem; text-align: center; font-size: 0.78rem; background-color: #e6ecf4; border: 2px solid transparent; border-radius: 0.35rem; color: #2c3e50; outline: none; }
+.staff-score:focus { background-color: #ffffff; border-color: var(--blue); }
+.staff-score:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ---- Faculty class cards ---- */
+.staff-class { display: flex; flex-direction: column; gap: 0.7rem; }
+.staff-class h3 { font-size: 1rem; color: #17356b; }
+
+/* ---- Account page ---- */
+.staff-identity { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; text-align: center; }
+.staff-identity h3 { font-size: 1.1rem; color: #17356b; }
+.staff-big-avatar {
+  width: 104px;
+  height: 104px;
+  display: grid;
+  place-items: center;
+  background-color: var(--blue);
+  color: #ffffff;
+  border-radius: 50%;
+  font-size: 2rem;
+  font-weight: 800;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22);
+  margin-bottom: 0.4rem;
+}
+
+/* ---- Reports ---- */
+.staff-report-bar { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.4rem; }
+.staff-paper { max-height: 520px; overflow: auto; border: 1px solid #d9e0ea; border-radius: 0.4rem; }
+.staff-paper .paper-table { font-size: 0.7rem; }
+
+/* ---- Responsive ---- */
+@media (max-width: 1100px) {
+  .staff-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .staff-split,
+  .staff-split-even { grid-template-columns: 1fr; }
+  .staff-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .staff-stats,
+  .staff-metrics { grid-template-columns: 1fr; }
+  .staff-role-chip { display: none; }
+  .staff-bars li { grid-template-columns: 7rem minmax(0, 1fr) 1.6rem; }
+}
+
+/* ---- Print: only the generated report ---- */
+@media print {
+  body.staff-printing > *:not(#stPrint) { display: none !important; }
+  body.staff-printing #stPrint {
+    display: block !important;
+    position: static;
+    width: 100%;
+    padding: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

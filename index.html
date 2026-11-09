@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="reports.css" />
   <link rel="stylesheet" href="admin.css" />
+  <link rel="stylesheet" href="staff.css" />
 </head>
 <body>
 
@@ -54,6 +55,9 @@
 
   <!-- VIEW 3: REGISTRAR / ADMIN PORTAL (built by admin.js) -->
   <div id="adminView" class="dashboard-wrapper hidden"></div>
+
+  <!-- VIEW 4: STAFF PORTALS - ICT / EdTech / Faculty (built by staff.js) -->
+  <div id="staffView" class="dashboard-wrapper hidden"></div>
 
   <!-- VIEW 2: DASHBOARD PAGE (Hidden by default) -->
   <div id="dashboardView" class="dashboard-wrapper hidden">
@@ -1140,9 +1144,11 @@
     </div>
   </div>
 
+  <!-- Scripts: staff.js must load BEFORE script.js, and script.js only once -->
   <script src="data.js"></script>
   <script src="admin.js"></script>
   <script src="admin2.js"></script>
+  <script src="staff.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
