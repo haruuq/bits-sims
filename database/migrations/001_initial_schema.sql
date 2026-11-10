@@ -1,0 +1,3 @@
+-- Version 1 initial schema migration
+-- SQL has not been approved or added yet.
+-- Do not execute this file until the schema review is complete.
