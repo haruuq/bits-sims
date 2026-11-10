@@ -5,9 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="BITS-SIMS - Student Information Management System Portal." />
   <title>BITS-SIMS | Portal</title>
+  <link rel="icon" type="image/x-icon" href="images/favicon.ico" />
+  <link rel="icon" type="image/png" sizes="32x32" href="images/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="images/favicon-192.png" />
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png" />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="reports.css" />
-  <link rel="stylesheet" href="admin.css" />
+  <link rel="stylesheet" href="registrar.css" />
   <link rel="stylesheet" href="staff.css" />
 </head>
 <body>
@@ -41,22 +45,31 @@
                    autocomplete="current-password" aria-required="true" required />
           </div>
 
+          <p id="loginError" class="login-error" role="alert" hidden></p>
+
           <button type="submit" class="submit-btn">Log In</button>
         </form>
 
         <nav class="forgot-link" aria-label="Account Recovery">
           <a href="#">Forgotten your username or email?</a>
         </nav>
+
+        <!-- Prototype only: the hardcoded logins from accounts.js. Delete with accounts.js. -->
+        <details class="demo-accounts">
+          <summary>Demo accounts (prototype)</summary>
+          <p>Pick a role to fill in its login.</p>
+          <ul id="demoAccounts"></ul>
+        </details>
       </section>
 
     </div>
   </main>
 
 
-  <!-- VIEW 3: REGISTRAR / ADMIN PORTAL (built by admin.js) -->
-  <div id="adminView" class="dashboard-wrapper hidden"></div>
+  <!-- VIEW 3: REGISTRAR PORTAL (built by registrar.js) -->
+  <div id="registrarView" class="dashboard-wrapper hidden"></div>
 
-  <!-- VIEW 4: STAFF PORTALS - ICT / EdTech / Faculty (built by staff.js) -->
+  <!-- VIEW 4: STAFF PORTALS - ICT / EdTech / Department Head / Faculty (built by staff.js) -->
   <div id="staffView" class="dashboard-wrapper hidden"></div>
 
   <!-- VIEW 2: DASHBOARD PAGE (Hidden by default) -->
@@ -1145,10 +1158,11 @@
   </div>
 
   <!-- Scripts: staff.js must load BEFORE script.js, and script.js only once -->
+  <script src="accounts.js"></script>
+  <script src="registry.js"></script>
   <script src="data.js"></script>
-  <script src="admin.js"></script>
-  <script src="admin2.js"></script>
   <script src="staff.js"></script>
+  <script src="registrar.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

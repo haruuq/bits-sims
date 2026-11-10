@@ -73,6 +73,39 @@ document.addEventListener('DOMContentLoaded', () => {
   /* =====================================================
      LOGIN / LOGOUT
   ===================================================== */
+  /* Hardcoded demo logins live in accounts.js. Each role opens its own portal:
+       STUDENT                                -> the student dashboard below
+       REGISTRAR                              -> registrar.js
+       ICT_ADMIN / EDTECH / DEPT_HEAD / FACULTY -> staff.js */
+  const loginError = $('#loginError');
+
+  function showLoginError(message) {
+    loginError.textContent = message;
+    loginError.hidden = !message;
+  }
+
+  function authenticate(username, password) {
+    const account = window.SIMSAccounts && SIMSAccounts.find(username);
+    if (!account) return { ok: false, message: 'Account not found. Check your username or email.' };
+    if (account.role === 'STUDENT') {
+      return password === account.password ? { ok: true, account } : { ok: false, message: 'Incorrect password.' };
+    }
+    if (account.role === 'REGISTRAR') return SIMSRegistrar.authenticate(username, password);
+    return SIMSStaff.authenticate(username, password);
+  }
+
+  function openPortal(account) {
+    loginView.classList.add('hidden');
+    if (account.role === 'STUDENT') {
+      dashboardView.classList.remove('hidden');
+    } else if (account.role === 'REGISTRAR') {
+      persistProfile(); persistDocs(); persistAdm(); // make sure the Registrar sees the student's stores
+      SIMSRegistrar.open(account);
+    } else {
+      SIMSStaff.open(account);
+    }
+  }
+
   loginForm.addEventListener('submit', (e) => {
     e.preventDefault();
 
@@ -80,18 +113,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const password = $('#password').value;
 
     if (!username || !password) {
-      alert('Please fill in both Username/Email and Password.');
+      showLoginError('Please fill in both Username/Email and Password.');
       return;
     }
 
-    loginView.classList.add('hidden');
-    if (window.SIMSAdmin && SIMSAdmin.isAdminUser(username)) {
-      persistProfile(); persistDocs(); persistAdm(); // make sure the admin side sees the student's stores
-      SIMSAdmin.open(username);
+    const result = authenticate(username, password);
+    if (!result.ok) {
+      showLoginError(result.message);
       return;
     }
-    dashboardView.classList.remove('hidden');
+    showLoginError('');
+    openPortal(result.account);
   });
+
+  loginForm.addEventListener('input', () => showLoginError(''));
+
+  // Demo accounts list (prototype) - built from accounts.js so it never drifts
+  const demoList = $('#demoAccounts');
+  if (demoList && window.SIMSAccounts) {
+    const ROLE_NAME = { ICT_ADMIN: 'ICT Services', EDTECH: 'EdTech Services', DEPT_HEAD: 'Department Head', FACULTY: 'Faculty', REGISTRAR: 'Registrar', STUDENT: 'Student' };
+    demoList.innerHTML = SIMSAccounts.all().map((a) =>
+      `<li><button type="button" data-user="${a.username}" data-pass="${a.password}"><strong>${ROLE_NAME[a.role]}</strong><span>${a.username}</span></button></li>`).join('');
+    demoList.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-user]');
+      if (!btn) return;
+      $('#username').value = btn.dataset.user;
+      $('#password').value = btn.dataset.pass;
+      showLoginError('');
+      $('#password').focus();
+    });
+  }
 
   if (logoutBtn) {
     logoutBtn.addEventListener('click', (e) => {

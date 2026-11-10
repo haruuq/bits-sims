@@ -1,11 +1,17 @@
 /* =========================================================
    BITS-SIMS - STAFF PORTALS
-   ICT Services (admin), Education Technology Services, Faculty
+   ICT Services (admin), Education Technology Services,
+   Department Head, Faculty. (Registrar and Student have their
+   own files: registrar.js and script.js.)
    Loaded before script.js. Exposes window.SIMSStaff:
      isStaffUser(username)            -> true if it matches a staff account
      authenticate(username, password) -> { ok, account, message }
      open(account)                    -> shows that account's portal
-   All data is sample data kept in localStorage (prototype only).
+     classes(), gradeSheets(), setGradeStatus(), attendanceSummary(),
+     attendanceAlerts(), record(), auditFor(), userName()
+                                      -> shared with registrar.js
+   Logins live in accounts.js. All data is sample data kept in
+   localStorage (prototype only).
    ========================================================= */
 (function () {
   'use strict';
@@ -51,18 +57,16 @@
   const persist = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage unavailable */ } };
 
   /* =====================================================
-     STAFF ACCOUNTS (the logins)
+     STAFF ACCOUNTS (the logins) - hardcoded in accounts.js
      ICT Admin : ict.admin      / Ict@2026
      EdTech    : edtech.staff   / Edtech@2026
+     Dept Head : dept.cruz      / Dept@2026
      Faculty   : faculty.reyes  / Faculty@2026
      (the work email also works as the username)
   ===================================================== */
-  const ACCOUNTS = [
-    { username: 'ict.admin', email: 'ict.admin@bits.edu.ph', password: 'Ict@2026', name: 'Marco Villanueva', role: 'ICT_ADMIN', title: 'System Administrator', dept: 'ICT Services', employeeNo: 'EMP-0012', hired: '2019-06-03', contact: '0917 555 0112' },
-    { username: 'edtech.staff', email: 'edtech@bits.edu.ph', password: 'Edtech@2026', name: 'Lara Mendoza', role: 'EDTECH', title: 'Learning Systems Specialist', dept: 'Education Technology Services', employeeNo: 'EMP-0027', hired: '2021-01-18', contact: '0917 555 0127' },
-    { username: 'faculty.reyes', email: 'f.reyes@bits.edu.ph', password: 'Faculty@2026', name: 'Daniel Reyes', role: 'FACULTY', title: 'Instructor, BSIT', dept: 'Information Technology', employeeNo: 'EMP-0143', hired: '2020-08-10', contact: '0917 555 0143' }
-  ];
-  ACCOUNTS.forEach((a) => { a.pwHash = hash(a.password); delete a.password; });
+  const STAFF_ROLES = ['ICT_ADMIN', 'EDTECH', 'DEPT_HEAD', 'FACULTY'];
+  const ACCOUNTS = (window.SIMSAccounts ? window.SIMSAccounts.byRole(...STAFF_ROLES) : []).map((a) => Object.assign({}, a, { pwHash: hash(a.password) }));
+  ACCOUNTS.forEach((a) => { delete a.password; });
 
   const ROLE_LABEL = {
     ICT_ADMIN: 'ICT Services', EDTECH: 'Education Technology Services', DEPT_HEAD: 'Department Head',
@@ -73,6 +77,7 @@
   const CAPS = {
     ICT_ADMIN: ['accounts.manage', 'roles.manage', 'audit.full', 'backup.manage', 'monitor.manage', 'reports.all', 'config'],
     EDTECH: ['accounts.support', 'roles.view', 'audit.view', 'backup.view', 'monitor.manage', 'classes.edit', 'reports.ops'],
+    DEPT_HEAD: ['classes.edit', 'classes.create', 'grades.review', 'attendance.view', 'students.view', 'reports.dept'],
     FACULTY: ['classes.assigned', 'attendance.encode', 'grades.encode', 'reports.class']
   };
 
@@ -86,6 +91,10 @@
       ['dashboard', 'Dashboard', 'home'], ['accounts', 'Account Support', 'users'], ['classes', 'Classes & Schedules', 'cal'],
       ['monitoring', 'System Monitoring', 'pulse'], ['roles', 'Roles (view only)', 'shield'], ['audit', 'Audit Trails', 'list'],
       ['backups', 'Backup Status', 'db'], ['reports', 'Reports', 'doc'], ['account', 'My Account', 'user']
+    ],
+    DEPT_HEAD: [
+      ['dashboard', 'Dashboard', 'home'], ['classes', 'Classes & Faculty', 'cal'], ['review', 'Grade Review', 'star'],
+      ['attendance', 'Attendance Overview', 'check'], ['students', 'Department Students', 'users'], ['reports', 'Reports', 'doc'], ['account', 'My Account', 'user']
     ],
     FACULTY: [
       ['dashboard', 'Dashboard', 'home'], ['classes', 'My Classes', 'cal'], ['attendance', 'Attendance', 'check'],
@@ -274,6 +283,7 @@
     audit: { q: '', mod: 'all', status: 'all' },
     att: { cls: '', date: '', draft: null, key: '' },
     gr: { cls: '', period: 'Prelim' },
+    stu: { q: '', status: 'all' },
     rep: { id: '', cls: '', date: '', period: 'Prelim', from: '', to: '', result: null }
   };
 
@@ -281,7 +291,7 @@
   const userName = (username) => { const u = db.users.find((x) => x.username === username); return u ? u.name : username; };
 
   function audit(mod, ent, rec, act, desc, status, prev, next) {
-    db.audit.unshift({ id: (db.audit[0] ? db.audit[0].id : 0) + 1, ts: nowStamp(), user: me ? me.username : 'SYSTEM', mod, ent, rec, act, desc, status: status || 'Success', ip: '10.10.' + (me ? (me.role === 'ICT_ADMIN' ? '1.5' : me.role === 'EDTECH' ? '2.17' : '3.40') : '0.1'), prev: prev || '', next: next || '' });
+    db.audit.unshift({ id: (db.audit[0] ? db.audit[0].id : 0) + 1, ts: nowStamp(), user: me ? me.username : 'SYSTEM', mod, ent, rec, act, desc, status: status || 'Success', ip: '10.10.' + (me ? (me.role === 'ICT_ADMIN' ? '1.5' : me.role === 'EDTECH' ? '2.17' : me.role === 'DEPT_HEAD' ? '5.3' : '3.40') : '0.1'), prev: prev || '', next: next || '' });
     if (db.audit.length > 300) db.audit.length = 300;
     save('audit');
   }
@@ -341,7 +351,7 @@
       root.className = 'dashboard-wrapper hidden';
       document.body.appendChild(root);
     }
-    const label = { ICT_ADMIN: 'ICT Services Console', EDTECH: 'EdTech Services Console', FACULTY: 'Faculty Portal' }[me.role];
+    const label = { ICT_ADMIN: 'ICT Services Console', EDTECH: 'EdTech Services Console', DEPT_HEAD: 'Department Head Portal', FACULTY: 'Faculty Portal' }[me.role];
     root.innerHTML = `
       <header class="top-nav">
         <div class="nav-brand">
@@ -425,6 +435,7 @@
     if (page === 'accounts') refreshAccounts();
     if (page === 'audit') refreshAudit();
     if (page === 'attendance') updateAttSummary();
+    if (page === 'students') refreshStudents();
   }
 
   /* ---------- small view helpers ---------- */
@@ -433,7 +444,7 @@
     'Pending Activation': 'warn', Pending: 'warn', Draft: 'warn', Warning: 'warn', Late: 'warn', 'Left Early': 'warn',
     Running: 'info', Investigating: 'info', Submitted: 'info', Excused: 'info', Information: 'info',
     Suspended: 'risk', Locked: 'risk', Failed: 'risk', Critical: 'risk', Error: 'risk', Absent: 'risk',
-    Inactive: 'muted', Full: 'warn'
+    Inactive: 'muted', Full: 'warn', Posted: 'ok', Returned: 'risk', 'On Leave': 'warn', Archived: 'muted'
   };
   const badge = (s) => `<span class="dm-status ${STATUS_CLS[s] || 'muted'}">${esc(s)}</span>`;
   const head = (title, sub, extra) => `<header class="adm-head"><div><h2>${esc(title)}</h2><p>${esc(sub)}</p></div>${extra || ''}</header>`;
@@ -547,13 +558,31 @@
           </div>
         </div>`;
     }
+    if (me.role === 'DEPT_HEAD') {
+      const waiting = gradeSheetsList().filter((s) => s.status === 'Submitted'), studs = deptStudents();
+      const facs = [...new Set(db.classes.map((c) => c.faculty))];
+      return `${head(`Welcome back, ${me.name}`, `${me.dept} Department \u00B7 1st Semester, AY 2026\u20132027`)}
+        <div class="staff-stats">
+          ${stat('GRADES TO REVIEW', waiting.length, waiting.length ? 'Submitted by faculty' : 'Nothing waiting')}
+          ${stat('CLASS OFFERINGS', db.classes.length, `${totalConflicts()} schedule conflict(s)`)}
+          ${stat('DEPARTMENT STUDENTS', studs.filter((s) => s.status === 'Active').length, `${studs.length} on record`)}
+          ${stat('FACULTY TEACHING', facs.length, 'With at least one class', 'is-blue')}
+        </div>
+        <div class="staff-split">
+          ${card('Grade sheets awaiting review', table(['Course', 'Faculty', 'Period', ''], waiting.map((g) => `<tr><td><strong>${esc(g.code)}</strong> ${esc(g.section)}<br><small>${esc(g.title)}</small></td><td>${esc(g.faculty)}</td><td>${esc(g.period)}</td><td><button type="button" class="btn-solid btn-sm" data-act="rev-open" data-id="${g.classId}" data-period="${g.period}">Review</button></td></tr>`), 'No grade sheets are waiting for your review.'))}
+          <div class="staff-stack">
+            ${card('Quick actions', `<div class="staff-quick"><button type="button" class="btn-solid" data-act="cls-new">+ New class offering</button><button type="button" class="btn-light" data-nav="review">Grade review</button><button type="button" class="btn-light" data-nav="attendance">Attendance</button></div>`)}
+            ${card('Faculty workload', `<ul class="staff-list">${facs.map((u) => { const mine = db.classes.filter((c) => c.faculty === u); return `<li><div><strong>${esc(userName(u))}</strong><small>${esc(mine.map((c) => c.code).join(', '))}</small></div><span>${mine.length} class${mine.length === 1 ? '' : 'es'}</span></li>`; }).join('')}</ul>`)}
+          </div>
+        </div>`;
+    }
     // Faculty
     const cls = myClasses();
     const dayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
     const todays = cls.filter((c) => c.day === dayName);
     const attTasks = cls.filter((c) => { const d = meetingDates(c)[0]; const s = db.fac.attendance[c.id] && db.fac.attendance[c.id][d]; return d && !(s && s.status === 'Submitted'); });
     const gradeTasks = [];
-    cls.forEach((c) => PERIODS.forEach((p) => { if (db.fac.assessments.some((a) => a.classId === c.id && a.period === p) && (db.fac.gradeStatus[`${c.id}|${p}`] || 'Draft') === 'Draft') gradeTasks.push([c, p]); }));
+    cls.forEach((c) => PERIODS.forEach((p) => { if (db.fac.assessments.some((a) => a.classId === c.id && a.period === p) && ['Draft', 'Returned'].includes(db.fac.gradeStatus[`${c.id}|${p}`] || 'Draft')) gradeTasks.push([c, p]); }));
     return `${head(`Welcome back, ${me.name.split(' ')[0]}`, `${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} \u00B7 1st Semester, AY 2026\u20132027`)}
       <div class="staff-stats">
         ${stat('ASSIGNED CLASSES', cls.length, `${cls.reduce((n, c) => n + c.size, 0)} students in total`)}
@@ -762,7 +791,8 @@
           <div class="staff-quick"><button type="button" class="btn-solid btn-sm" data-act="cls-roster" data-id="${c.id}">Class list</button><button type="button" class="btn-light btn-sm" data-act="att-open" data-id="${c.id}">Attendance</button><button type="button" class="btn-light btn-sm" data-act="gr-open" data-id="${c.id}" data-period="Prelim">Grades</button></div></div>`)).join('')}</div>`;
     }
     const conflicts = totalConflicts();
-    return `${head('Classes & Schedules', 'Adjust meeting times, rooms and faculty assignment. Changes are checked for room and faculty conflicts.')}
+    const isDH = me.role === 'DEPT_HEAD';
+    return `${head(isDH ? 'Classes & Faculty' : 'Classes & Schedules', isDH ? 'Create class offerings, assign faculty and set schedules and rooms. Changes are checked for room and faculty conflicts.' : 'Adjust meeting times, rooms and faculty assignment. Changes are checked for room and faculty conflicts.', isDH ? '<button type="button" class="btn-solid" data-act="cls-new">+ New class offering</button>' : '')}
       <div class="staff-stats">${stat('OFFERINGS', db.classes.length, '1st Semester, AY 2026\u20132027')}${stat('SCHEDULE CONFLICTS', conflicts, conflicts ? 'Needs fixing' : 'None found')}${stat('ROOMS IN USE', new Set(db.classes.map((c) => c.room)).size, `of ${ROOMS.length}`)}${stat('FACULTY ASSIGNED', new Set(db.classes.map((c) => c.faculty)).size, 'With at least one class', 'is-blue')}</div>
       ${card('', table(['Course', 'Section', 'Faculty', 'Schedule', 'Room', 'Enrolled', 'Status', ''], db.classes.map((c) => { const cf = findConflicts(c); return `<tr><td><strong>${esc(c.code)}</strong><br><small>${esc(c.title)}</small></td><td>${esc(c.section)}</td><td>${esc(userName(c.faculty))}</td><td>${esc(schedText(c))}</td><td>${esc(c.room)}</td><td>${c.size}/${c.capacity}</td><td>${badge(c.status)}${cf.length ? '<br><span class="dm-status risk">Conflict</span>' : ''}</td><td><button type="button" class="btn-light btn-sm" data-act="cls-edit" data-id="${c.id}">Edit</button></td></tr>`; })))}`;
   };
@@ -811,6 +841,7 @@
     return ui.att.draft;
   }
   PAGES.attendance = () => {
+    if (me.role === 'DEPT_HEAD') return deptAttendance();
     const cls = myClasses();
     if (!cls.length) return head('Attendance', 'You have no assigned classes.');
     if (!cls.some((c) => c.id === ui.att.cls)) ui.att.cls = cls[0].id;
@@ -895,8 +926,9 @@
     const list = assessmentsFor(c.id, ui.gr.period);
     const totalW = list.reduce((n, a) => n + a.weight, 0);
     const status = db.fac.gradeStatus[`${c.id}|${ui.gr.period}`] || 'Draft';
-    const locked = status !== 'Draft';
-    return `${head('Grade Management', 'Define assessments, encode scores and submit period grades for review. Posting is done by the Registrar.',
+    const locked = !['Draft', 'Returned'].includes(status);
+    const gnote = (db.fac.gradeNotes || {})[`${c.id}|${ui.gr.period}`];
+    return `${head('Grade Management', 'Define assessments, encode scores and submit period grades for Department Head review. The Registrar posts approved grades.',
       locked ? '' : '<button type="button" class="btn-solid" data-act="gr-add">+ Add assessment</button>')}
       ${card('', `<div class="staff-toolbar">
         <select id="grCls" class="dm-select" aria-label="Class">${opts(cls.map((x) => [x.id, `${x.code} \u00B7 ${x.section}`]), c.id)}</select>
@@ -908,8 +940,9 @@
         <tbody>${ROSTER.map((s) => { const r = periodResult(c.id, ui.gr.period, s.sn); return `<tr data-sn="${s.sn}"><td><strong>${esc(s.name)}</strong><br><small>${s.sn}</small></td>${list.map((a) => { const v = (db.fac.scores[a.id] || {})[s.sn]; return `<td class="num"><input type="number" class="staff-score" min="0" max="${a.max}" step="0.5" value="${typeof v === 'number' ? v : ''}" data-score="${a.id}|${s.sn}" ${locked ? 'disabled' : ''} aria-label="${esc(a.name)} score for ${esc(s.name)}" /></td>`; }).join('')}
           <td class="num" data-pct>${r.pct === null ? '\u2014' : r.pct.toFixed(1) + '%'}</td><td class="num" data-eq>${r.pct === null || !r.complete ? '\u2014' : toGrade(r.pct).toFixed(2)}</td></tr>`; }).join('')}</tbody></table></div>`
         : '<p class="dm-empty">No assessments for this period yet. Add a quiz, exam or project to start encoding scores.</p>'}
+      ${status === 'Returned' && gnote ? `<p class="staff-bad"><strong>Returned by ${esc(userName(gnote.by))}:</strong> ${esc(gnote.note)}</p>` : ''}
       <small class="set-error" id="grError"></small>
-      <div class="set-actions">${locked ? '<button type="button" class="btn-light" data-act="gr-recall">Recall to draft</button><span class="staff-meta">Submitted for Department Head review.</span>' : `<button type="button" class="btn-solid" data-act="gr-submit" ${list.length ? '' : 'disabled'}>Submit ${esc(ui.gr.period)} grades</button>`}</div>
+      <div class="set-actions">${locked ? (status === 'Submitted' ? '<button type="button" class="btn-light" data-act="gr-recall">Recall to draft</button><span class="staff-meta">Submitted for Department Head review.</span>' : status === 'Approved' ? '<span class="staff-meta">Approved by the Department Head. Waiting for the Registrar to post.</span>' : '<span class="staff-meta">Posted by the Registrar. Changes to posted grades need a formal correction.</span>') : `<button type="button" class="btn-solid" data-act="gr-submit" ${list.length ? '' : 'disabled'}>Submit ${esc(ui.gr.period)} grades</button>`}</div>
       <p class="dm-foot">Equivalent grade: 1.00 highest, 3.00 passing (75%), 5.00 failed. A grade shows once every score is encoded.</p>`)}`;
   };
   function updateGradeRow(sn) {
@@ -939,9 +972,13 @@
     { id: 'backups', name: 'Backup History Report', roles: ['ICT_ADMIN'], filters: ['range'], build: () => ({ cols: ['ID', 'Started', 'Type', 'Size', 'Status', 'Restore tested'], rows: db.backups.history.filter((b) => inRange(b.start)).map((b) => [b.id, b.start, b.type, b.size ? fmtBytes(b.size) : '\u2014', b.status, b.restoreTested || '\u2014']) }) },
     { id: 'events', name: 'System Event Report', roles: ['ICT_ADMIN', 'EDTECH'], filters: ['range'], build: () => ({ cols: ['ID', 'Time', 'Type', 'Module', 'Description', 'Severity', 'Status'], rows: db.events.filter((e) => inRange(e.ts)).map((e) => [e.id, e.ts, e.type, e.module, e.desc, e.severity, e.status]) }) },
     { id: 'history', name: 'Report Generation History', roles: ['ICT_ADMIN'], filters: [], build: () => ({ cols: ['Generated', 'Report', 'By', 'Records'], rows: db.reports.map((r) => [r.ts, r.name, r.by, r.count]) }) },
-    { id: 'schedule', name: 'Class Schedule Report', roles: ['EDTECH'], filters: [], build: () => ({ cols: ['Course', 'Section', 'Faculty', 'Day', 'Time', 'Room', 'Modality', 'Status'], rows: db.classes.map((c) => [c.code, c.section, userName(c.faculty), c.day, `${fmtTime(c.start)}\u2013${fmtTime(c.end)}`, c.room, c.modality, c.status]) }) },
-    { id: 'assign', name: 'Faculty Teaching Assignment Report', roles: ['EDTECH'], filters: [], build: () => ({ cols: ['Faculty', 'Course', 'Section', 'Enrolled', 'Capacity'], rows: [...db.classes].sort((a, b) => userName(a.faculty).localeCompare(userName(b.faculty))).map((c) => [userName(c.faculty), `${c.code} ${c.title}`, c.section, c.size, c.capacity]) }) },
+    { id: 'schedule', name: 'Class Schedule Report', roles: ['EDTECH', 'DEPT_HEAD'], filters: [], build: () => ({ cols: ['Course', 'Section', 'Faculty', 'Day', 'Time', 'Room', 'Modality', 'Status'], rows: db.classes.map((c) => [c.code, c.section, userName(c.faculty), c.day, `${fmtTime(c.start)}\u2013${fmtTime(c.end)}`, c.room, c.modality, c.status]) }) },
+    { id: 'assign', name: 'Faculty Teaching Assignment Report', roles: ['EDTECH', 'DEPT_HEAD'], filters: [], build: () => ({ cols: ['Faculty', 'Course', 'Section', 'Enrolled', 'Capacity'], rows: [...db.classes].sort((a, b) => userName(a.faculty).localeCompare(userName(b.faculty))).map((c) => [userName(c.faculty), `${c.code} ${c.title}`, c.section, c.size, c.capacity]) }) },
     { id: 'rooms', name: 'Room Utilization Report', roles: ['EDTECH'], filters: [], build: () => ({ cols: ['Room', 'Weekly meetings', 'Hours per week', 'Classes'], rows: ROOMS.map((r) => { const l = db.classes.filter((c) => c.room === r); return [r, l.length, (l.reduce((n, c) => n + toMin(c.end) - toMin(c.start), 0) / 60).toFixed(1), l.map((c) => `${c.code} ${c.section}`).join(', ') || '\u2014']; }) }) },
+    { id: 'deptstudents', name: 'Department Student List', roles: ['DEPT_HEAD'], filters: [], build: () => ({ cols: ['Student no.', 'Name', 'Program', 'Year', 'Admission', 'Status'], rows: deptStudents().map((s) => [s.no, s.name, s.program, s.year, s.admission, s.status]) }) },
+    { id: 'deptstatus', name: 'Department Student Status Report', roles: ['DEPT_HEAD'], filters: [], build: () => ({ cols: ['Status', 'Students'], rows: Object.entries(deptStudents().reduce((a, s) => { a[s.status] = (a[s.status] || 0) + 1; return a; }, {})) }) },
+    { id: 'deptatt', name: 'Department Attendance Summary', roles: ['DEPT_HEAD'], filters: [], build: () => ({ cols: ['Course', 'Section', 'Faculty', 'Meetings', 'Absences', 'Late', 'Attendance %'], rows: attendanceSummary().map((r) => [r.code, r.section, r.faculty, r.held, r.absent, r.late, r.rate === null ? '\u2014' : r.rate.toFixed(1) + '%']) }) },
+    { id: 'deptgrades', name: 'Grade Submission Status', roles: ['DEPT_HEAD'], filters: [], build: () => ({ cols: ['Course', 'Section', 'Faculty', 'Period', 'Status'], rows: gradeSheetsList().map((g) => [g.code, g.section, g.faculty, g.period, g.status]) }) },
     { id: 'classlist', name: 'Class List', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['#', 'Student number', 'Name', 'Course', 'Section', 'Faculty'], rows: ROSTER.map((s, i) => [i + 1, s.sn, s.name, c.code, c.section, me.name]) }) },
     { id: 'daily', name: 'Daily Attendance Report', roles: ['FACULTY'], filters: ['class', 'date'], build: (c) => { const s = attSession(c, ui.rep.date); return { cols: ['Student number', 'Name', 'Status', 'Time in', 'Time out', 'Remarks'], rows: s ? ROSTER.map((r) => { const x = s.rows[r.sn] || {}; return [r.sn, r.name, x.status || '\u2014', x.timeIn || '\u2014', x.timeOut || '\u2014', x.remarks || '']; }) : [] }; } },
     { id: 'attsum', name: 'Student Attendance Summary', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['Student number', 'Name', 'Sessions', 'Attended', 'Attendance %'], rows: ROSTER.map((s) => { const a = attPct(c.id, s.sn); return [s.sn, s.name, a.held, a.att, a.pct.toFixed(1) + '%']; }) }) },
@@ -961,7 +998,7 @@
     }
     const c = cls.find((x) => x.id === ui.rep.cls);
     const mine = db.reports.filter((r) => me.role === 'ICT_ADMIN' || r.by === me.username).slice(0, 6);
-    return `${head('Reports', me.role === 'FACULTY' ? 'Reports are limited to the classes assigned to you.' : me.role === 'EDTECH' ? 'Operational reports for schedules, assignments and platform events.' : 'Administrative and security reports. Student academic data is not included.')}
+    return `${head('Reports', me.role === 'FACULTY' ? 'Reports are limited to the classes assigned to you.' : me.role === 'EDTECH' ? 'Operational reports for schedules, assignments and platform events.' : me.role === 'DEPT_HEAD' ? 'Departmental reports for your students, classes, attendance and grade submissions.' : 'Administrative and security reports. Student academic data is not included.')}
       ${card('Generate a report', `<div class="staff-toolbar">
         <select id="repId" class="dm-select" aria-label="Report">${opts(list.map((r) => [r.id, r.name]), ui.rep.id)}</select>
         ${def.filters.includes('class') ? `<select id="repCls" class="dm-select" aria-label="Class">${opts(cls.map((x) => [x.id, `${x.code} \u00B7 ${x.section}`]), ui.rep.cls)}</select>` : ''}
@@ -1010,6 +1047,165 @@
     window.addEventListener('afterprint', done);
     toast('Choose \u201CSave as PDF\u201D in the print dialog.', 'info');
     setTimeout(() => window.print(), 200);
+  }
+
+  /* =====================================================
+     DEPARTMENT HEAD
+     Class offerings + faculty assignment, grade review, and a
+     read-only view of the department's students and attendance.
+     Scope: the Department Head's own department (me.deptCode).
+     Grade chain (design reference 5.15): Faculty submits ->
+     Department Head approves/returns -> Registrar posts.
+  ===================================================== */
+  const deptCode = () => (me && me.deptCode) || 'IT';
+  const deptStudents = () => (window.SIMSRegistry ? window.SIMSRegistry.inDepartment(deptCode()) : []);
+
+  function gradeSheetsList() {
+    const out = [];
+    db.classes.forEach((c) => PERIODS.forEach((p) => {
+      if (!db.fac.assessments.some((a) => a.classId === c.id && a.period === p)) return;
+      const key = `${c.id}|${p}`;
+      out.push({ classId: c.id, code: c.code, section: c.section, title: c.title, faculty: userName(c.faculty), period: p, status: db.fac.gradeStatus[key] || 'Draft', note: (db.fac.gradeNotes || {})[key] || null });
+    }));
+    return out;
+  }
+
+  // Write to the shared audit trail on behalf of another portal (e.g. the Registrar)
+  function record(user, mod, ent, rec, act, desc, status, prev, next) {
+    db.audit.unshift({ id: (db.audit[0] ? db.audit[0].id : 0) + 1, ts: nowStamp(), user, mod, ent, rec, act, desc, status: status || 'Success', ip: '10.10.4.8', prev: prev || '', next: next || '' });
+    if (db.audit.length > 300) db.audit.length = 300;
+    save('audit');
+  }
+
+  function setGradeStatus(classId, period, status, by, note) {
+    const key = `${classId}|${period}`, before = db.fac.gradeStatus[key] || 'Draft';
+    db.fac.gradeStatus[key] = status;
+    db.fac.gradeNotes = db.fac.gradeNotes || {};
+    if (note) db.fac.gradeNotes[key] = { by, note, ts: nowStamp(), status };
+    else delete db.fac.gradeNotes[key];
+    persist(K.fac, db.fac);
+    const c = db.classes.find((x) => x.id === classId);
+    record(by, 'Grades', 'StudentGrades', `${c ? c.code : classId}|${period}`, status === 'Returned' ? 'UPDATE' : 'APPROVE',
+      `${status} ${period} grades for ${c ? c.code + ' ' + c.section : classId}${note ? ' \u2014 ' + note : ''}`, 'Success', 'status: ' + before, 'status: ' + status);
+  }
+
+  function attendanceSummary() {
+    return db.classes.map((c) => {
+      const sessions = Object.values(db.fac.attendance[c.id] || {}).filter((s) => s.status === 'Submitted');
+      let present = 0, absent = 0, late = 0;
+      sessions.forEach((s) => ROSTER.forEach((st) => {
+        const r = s.rows[st.sn]; if (!r) return;
+        if (r.status === 'Absent') absent++; else if (r.status === 'Excused') return; else { present++; if (r.status === 'Late') late++; }
+      }));
+      return { code: c.code, title: c.title, section: c.section, faculty: userName(c.faculty), held: sessions.length, absent, late, rate: present + absent ? (present / (present + absent)) * 100 : null };
+    });
+  }
+
+  /* ---------- Attendance overview (read only) ---------- */
+  function deptAttendance() {
+    const rows = attendanceSummary();
+    const held = rows.reduce((n, r) => n + r.held, 0), withData = rows.filter((r) => r.rate !== null);
+    const avg = withData.length ? withData.reduce((n, r) => n + r.rate, 0) / withData.length : null;
+    return `${head('Attendance Overview', 'Attendance for your department\u2019s classes. Assigned faculty encode it; you can review it here.')}
+      <div class="staff-stats">
+        ${stat('AVERAGE ATTENDANCE', avg === null ? '\u2014' : avg.toFixed(1) + '%', 'Across classes with records')}
+        ${stat('MEETINGS RECORDED', held, 'Submitted by faculty')}
+        ${stat('ACTIVE ALERTS', db.fac.alerts.length, 'Absence or tardiness thresholds', 'is-blue')}
+      </div>
+      ${card('Class attendance', table(['Course', 'Section', 'Faculty', 'Meetings', 'Absences', 'Late', 'Rate'], rows.map((r) => `<tr><td><strong>${esc(r.code)}</strong><br><small>${esc(r.title)}</small></td><td>${esc(r.section)}</td><td>${esc(r.faculty)}</td><td>${r.held}</td><td>${r.absent}</td><td>${r.late}</td><td>${r.rate === null ? '\u2014' : r.rate.toFixed(1) + '%'}</td></tr>`)))}
+      ${card('Attendance alerts', db.fac.alerts.length ? `<ul class="staff-list">${db.fac.alerts.slice(0, 8).map((a) => `<li><div><strong>${esc(a.student)}</strong><small>${esc(a.message)}</small></div>${badge(a.type === 'Absence' ? 'Absent' : 'Late')}</li>`).join('')}</ul>` : '<p class="dm-modal-note">No students have crossed an alert threshold.</p>')}`;
+  }
+
+  /* ---------- Department students (read only, from the Registrar's registry) ---------- */
+  PAGES.students = () => `${head('Department Students', `Students in the ${me.dept} department. View only \u2014 registration and record changes are handled by the Registrar.`)}
+    ${card('', `<div class="staff-toolbar">
+      <input type="search" id="stuQ" class="dm-select staff-search" placeholder="Search student number or name" value="${esc(ui.stu.q)}" aria-label="Search students" />
+      <select id="stuStatus" class="dm-select" aria-label="Filter by status">${opts(['Active', 'On Leave', 'Archived'].map((s) => [s, s]), ui.stu.status, 'All statuses')}</select>
+    </div><div id="stuTable"></div>`)}`;
+  function refreshStudents() {
+    const box = $('#stuTable'); if (!box) return;
+    const q = ui.stu.q.toLowerCase();
+    const list = deptStudents().filter((s) => (ui.stu.status === 'all' || s.status === ui.stu.status) && (!q || (s.no + ' ' + s.name).toLowerCase().includes(q)));
+    box.innerHTML = table(['Student no.', 'Name', 'Program', 'Year', 'Admission', 'Status'], list.map((s) => `<tr><td>${esc(s.no)}</td><td><strong>${esc(s.name)}</strong></td><td>${esc(s.program)}</td><td>${esc(s.year)}</td><td>${esc(s.admission)}</td><td>${badge(s.status)}</td></tr>`), 'No students match.')
+      + `<p class="dm-foot">Showing ${list.length} of ${deptStudents().length} students in ${esc(me.dept)}.</p>`;
+  }
+
+  /* ---------- Grade review ---------- */
+  PAGES.review = () => {
+    const order = { Submitted: 0, Returned: 1, Approved: 2, Posted: 3, Draft: 4 };
+    const list = gradeSheetsList().sort((a, b) => order[a.status] - order[b.status]);
+    const n = (s) => list.filter((x) => x.status === s).length;
+    return `${head('Grade Review', 'Review grade sheets submitted by your faculty. Approved sheets go to the Registrar for posting; returned sheets go back to the faculty with your remarks.')}
+      <div class="staff-stats">
+        ${stat('AWAITING REVIEW', n('Submitted'), 'Submitted by faculty')}
+        ${stat('RETURNED', n('Returned'), 'Back with the faculty')}
+        ${stat('APPROVED', n('Approved'), 'Waiting for the Registrar')}
+        ${stat('POSTED', n('Posted'), 'Official grades', 'is-blue')}
+      </div>
+      ${card('', table(['Course', 'Section', 'Faculty', 'Period', 'Status', 'Remarks', ''], list.map((g) => `<tr><td><strong>${esc(g.code)}</strong><br><small>${esc(g.title)}</small></td><td>${esc(g.section)}</td><td>${esc(g.faculty)}</td><td>${esc(g.period)}</td><td>${badge(g.status)}</td><td><small>${g.note ? esc(g.note.note) : '\u2014'}</small></td>
+        <td>${g.status === 'Draft' ? '<small>Not yet submitted</small>' : `<button type="button" class="btn-${g.status === 'Submitted' ? 'solid' : 'light'} btn-sm" data-act="rev-open" data-id="${g.classId}" data-period="${g.period}">${g.status === 'Submitted' ? 'Review' : 'View'}</button>`}</td></tr>`), 'No grade sheets yet.'))}`;
+  };
+
+  function reviewModal(classId, period) {
+    const c = db.classes.find((x) => x.id === classId); if (!c) return;
+    const key = `${classId}|${period}`, status = db.fac.gradeStatus[key] || 'Draft', list = assessmentsFor(classId, period);
+    const totalW = list.reduce((n, a) => n + a.weight, 0);
+    const res = ROSTER.map((s) => ({ s, r: periodResult(classId, period, s.sn) }));
+    const done = res.filter((x) => x.r.pct !== null && x.r.complete);
+    const avg = done.length ? done.reduce((n, x) => n + x.r.pct, 0) / done.length : null;
+    const failing = done.filter((x) => toGrade(x.r.pct) > 3).length;
+    const act = status === 'Submitted';
+    openModal({ title: `${period} grades \u00B7 ${c.code} ${c.section}`, ok: act ? 'Approve grades' : 'Close', cancel: act ? 'Cancel' : 'Close',
+      body: `<p class="dm-modal-note"><strong>${esc(c.title)}</strong> \u2014 ${esc(userName(c.faculty))} \u00B7 ${badge(status)}</p>
+        <div class="dm-table-wrap staff-table-wrap"><table class="dm-table staff-table"><thead><tr><th>Student</th>${list.map((a) => `<th class="num">${esc(a.name)}<br><small>/${a.max} \u00B7 ${a.weight}%</small></th>`).join('')}<th class="num">${esc(period)} %</th><th class="num">Grade</th></tr></thead>
+        <tbody>${res.map(({ s, r }) => `<tr><td><strong>${esc(s.name)}</strong><br><small>${s.sn}</small></td>${list.map((a) => { const v = (db.fac.scores[a.id] || {})[s.sn]; return `<td class="num">${typeof v === 'number' ? v : '\u2014'}</td>`; }).join('')}<td class="num">${r.pct === null ? '\u2014' : r.pct.toFixed(1) + '%'}</td><td class="num">${r.pct === null || !r.complete ? '\u2014' : toGrade(r.pct).toFixed(2)}</td></tr>`).join('')}</tbody></table></div>
+        <p class="dm-foot">Class average ${avg === null ? '\u2014' : avg.toFixed(1) + '%'} \u00B7 ${failing} failing \u00B7 weights total <strong class="${totalW === 100 ? '' : 'staff-bad'}">${totalW}%</strong>${totalW === 100 ? '' : ' (should be 100%)'}</p>
+        ${act ? `<div class="set-field"><label for="revNote">Remarks (required to return the grades)</label><textarea id="revNote" rows="3" placeholder="e.g. Please recheck the Quiz 2 scores."></textarea></div>
+        <div class="set-actions"><button type="button" class="btn-light" data-act="rev-return" data-id="${classId}" data-period="${period}">Return for correction</button></div>` : ''}`,
+      onOk: () => {
+        if (!act) return true;
+        setGradeStatus(classId, period, 'Approved', me.username);
+        toast(`${period} grades approved. The Registrar can now post them.`); render(); return true;
+      } });
+  }
+
+  /* ---------- New class offering ---------- */
+  function newClassForm() {
+    const faculty = db.users.filter((u) => u.role === 'FACULTY' && u.status !== 'Suspended' && u.status !== 'Inactive');
+    return `<form id="ncForm" class="staff-form" novalidate>
+      <div class="set-grid-2">
+        ${field('ncCode', 'Course code', '<input id="ncCode" placeholder="e.g. ITP3113R" />')}
+        ${field('ncTitle', 'Course title', '<input id="ncTitle" />')}
+        ${field('ncSection', 'Section', '<input id="ncSection" placeholder="e.g. 3B" />')}
+        ${field('ncYear', 'Year level', `<select id="ncYear" class="dm-select">${opts(['1st Year', '2nd Year', '3rd Year', '4th Year'].map((y) => [y, y]), '3rd Year')}</select>`)}
+        ${field('ncFac', 'Assigned faculty', `<select id="ncFac" class="dm-select">${opts(faculty.map((u) => [u.username, u.name]), '')}</select>`)}
+        ${field('ncRoom', 'Room', `<select id="ncRoom" class="dm-select">${opts(ROOMS.map((r) => [r, r]), '')}</select>`)}
+        ${field('ncDay', 'Day', `<select id="ncDay" class="dm-select">${opts(Object.keys(DAY_IDX).map((d) => [d, d]), 'Monday')}</select>`)}
+        ${field('ncMode', 'Modality', `<select id="ncMode" class="dm-select">${opts(['Face-to-Face', 'Online', 'Hybrid'].map((d) => [d, d]), 'Face-to-Face')}</select>`)}
+        ${field('ncStart', 'Start time', '<input id="ncStart" type="time" />')}
+        ${field('ncEnd', 'End time', '<input id="ncEnd" type="time" />')}
+        ${field('ncCap', 'Class capacity', '<input id="ncCap" type="number" min="1" max="200" value="40" />')}
+      </div></form>`;
+  }
+  function saveNewClass() {
+    ['ncCode', 'ncTitle', 'ncSection', 'ncEnd', 'ncCap'].forEach((i) => setErr(i, ''));
+    const v = { code: $('#ncCode').value.trim().toUpperCase(), title: $('#ncTitle').value.trim(), section: $('#ncSection').value.trim().toUpperCase(), start: $('#ncStart').value, end: $('#ncEnd').value, cap: Number($('#ncCap').value) };
+    let ok = true;
+    if (!v.code) { setErr('ncCode', 'Course code is required.'); ok = false; }
+    if (!v.title) { setErr('ncTitle', 'Course title is required.'); ok = false; }
+    if (!v.section) { setErr('ncSection', 'Section is required.'); ok = false; }
+    if (!(v.cap >= 1)) { setErr('ncCap', 'Enter a capacity of at least 1.'); ok = false; }
+    if (!v.start || !v.end || toMin(v.end) <= toMin(v.start)) { setErr('ncEnd', 'Set a start time, and an end time after it.'); ok = false; }
+    if (v.code && v.section && db.classes.some((c) => c.code === v.code && c.section === v.section)) { setErr('ncSection', `${v.code} section ${v.section} already exists.`); ok = false; }
+    if (!ok) return false;
+    const next = { id: 'CO-' + (db.classes.reduce((n, c) => Math.max(n, parseInt(c.id.split('-')[1], 10) || 0), 0) + 1), code: v.code, title: v.title, section: v.section, year: $('#ncYear').value, faculty: $('#ncFac').value,
+      day: $('#ncDay').value, start: v.start, end: v.end, room: $('#ncRoom').value, modality: $('#ncMode').value, type: 'Lecture', capacity: v.cap, size: 0, status: 'Open' };
+    const conflicts = findConflicts(next);
+    if (conflicts.length) { setErr('ncEnd', conflicts[0]); return false; }
+    db.classes.push(next); save('classes');
+    audit('Scheduling', 'ClassOfferings', next.id, 'CREATE', `Created class offering ${next.code} ${next.section} (${userName(next.faculty)})`, 'Success', '', `${next.day} ${next.start}-${next.end} ${next.room}`);
+    toast('Class offering created.'); render();
+    return true;
   }
 
   /* ---------- SYSTEM SETTINGS (ICT) ---------- */
@@ -1107,6 +1303,10 @@
       case 'mon-resolve': { const ev = db.events.find((x) => x.id === id); if (!ev) break; ev.status = 'Resolved'; ev.by = me.username; ev.resolved = nowStamp(); save('events'); audit('Monitoring', 'SystemEvents', ev.id, 'UPDATE', `Resolved ${ev.id}`); toast(`${ev.id} marked resolved.`); render(); break; }
 
       case 'cls-edit': { const c = db.classes.find((x) => x.id === id); if (c && can('classes.edit')) openModal({ title: 'Edit schedule & assignment', body: classForm(c), onOk: () => saveClass(c) }); break; }
+      case 'cls-new': if (!can('classes.create')) break; openModal({ title: 'New class offering', body: newClassForm(), ok: 'Create offering', onOk: () => saveNewClass() }); break;
+      case 'rev-open': if (!can('grades.review')) break; reviewModal(id, el.dataset.period); break;
+      case 'rev-return': { if (!can('grades.review')) break; const note = ($('#revNote') || {}).value || ''; if (!note.trim()) { toast('Add remarks so the faculty knows what to fix.', 'error'); break; }
+        setGradeStatus(id, el.dataset.period, 'Returned', me.username, note.trim()); closeModal(); toast('Grades returned to the faculty.'); render(); break; }
       case 'cls-roster': { const c = myClasses().find((x) => x.id === id); if (c) rosterModal(c); break; }
 
       case 'att-open': { ui.att.cls = id; ui.att.key = ''; ui.att.date = ''; go('attendance'); break; }
@@ -1133,8 +1333,8 @@
         if (totalW !== 100) err = `Assessment weights total ${totalW}%. They must total 100% before submitting.`;
         else if (ROSTER.some((s) => list.some((a) => typeof (db.fac.scores[a.id] || {})[s.sn] !== 'number'))) err = 'Every student needs a score for every assessment before you can submit.';
         $('#grError').textContent = err; if (err) break;
-        ask('Submit grades?', `Submit ${ui.gr.period} grades for review? You won\u2019t be able to edit scores unless you recall them.`, 'Submit', () => { db.fac.gradeStatus[`${ui.gr.cls}|${ui.gr.period}`] = 'Submitted'; persist(K.fac, db.fac); audit('Grades', 'StudentGrades', `${ui.gr.cls}|${ui.gr.period}`, 'APPROVE', `Submitted ${ui.gr.period} grades`); toast('Grades submitted for review.'); render(); }); break; }
-      case 'gr-recall': ask('Recall to draft?', 'The submission is withdrawn so you can edit scores again.', 'Recall', () => { db.fac.gradeStatus[`${ui.gr.cls}|${ui.gr.period}`] = 'Draft'; persist(K.fac, db.fac); audit('Grades', 'StudentGrades', `${ui.gr.cls}|${ui.gr.period}`, 'UPDATE', `Recalled ${ui.gr.period} grades to draft`); render(); }); break;
+        ask('Submit grades?', `Submit ${ui.gr.period} grades for review? You won\u2019t be able to edit scores unless you recall them.`, 'Submit', () => { db.fac.gradeStatus[`${ui.gr.cls}|${ui.gr.period}`] = 'Submitted'; if (db.fac.gradeNotes) delete db.fac.gradeNotes[`${ui.gr.cls}|${ui.gr.period}`]; persist(K.fac, db.fac); audit('Grades', 'StudentGrades', `${ui.gr.cls}|${ui.gr.period}`, 'APPROVE', `Submitted ${ui.gr.period} grades`); toast('Grades submitted for review.'); render(); }); break; }
+      case 'gr-recall': if ((db.fac.gradeStatus[`${ui.gr.cls}|${ui.gr.period}`] || 'Draft') !== 'Submitted') break; ask('Recall to draft?', 'The submission is withdrawn so you can edit scores again.', 'Recall', () => { db.fac.gradeStatus[`${ui.gr.cls}|${ui.gr.period}`] = 'Draft'; persist(K.fac, db.fac); audit('Grades', 'StudentGrades', `${ui.gr.cls}|${ui.gr.period}`, 'UPDATE', `Recalled ${ui.gr.period} grades to draft`); render(); }); break;
 
       case 'rep-generate': generateReport(); break;
       case 'rep-csv': if (ui.rep.result) { downloadCsv(ui.rep.result.title, ui.rep.result.cols, ui.rep.result.rows); audit('Reports', 'GeneratedReports', ui.rep.id, 'EXPORT', `Exported ${ui.rep.result.title} to CSV`); } break;
@@ -1181,6 +1381,7 @@
       case 'attDate': ui.att.date = t.value; render(); break;
       case 'grCls': ui.gr.cls = t.value; render(); break;
       case 'grPeriod': ui.gr.period = t.value; render(); break;
+      case 'stuStatus': ui.stu.status = t.value; refreshStudents(); break;
       case 'repId': ui.rep.id = t.value; ui.rep.result = null; render(); break;
       case 'repCls': ui.rep.cls = t.value; ui.rep.result = null; render(); break;
       case 'repDate': ui.rep.date = t.value; ui.rep.result = null; break;
@@ -1194,6 +1395,7 @@
     const t = e.target;
     if (t.id === 'acctQ') { ui.acct.q = t.value; refreshAccounts(); }
     else if (t.id === 'auQ') { ui.audit.q = t.value; refreshAudit(); }
+    else if (t.id === 'stuQ') { ui.stu.q = t.value; refreshStudents(); }
     else if (t.id === 'spNew') { const l = pwScore(t.value); $('#spMeter').dataset.level = l; $('#spMeterLabel').textContent = t.value ? ['', 'Weak', 'Fair', 'Good', 'Strong'][l] : ''; }
   }
 
@@ -1268,5 +1470,16 @@
 
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && root && $('#stModal') && !$('#stModal').classList.contains('hidden')) closeModal(); });
 
-  window.SIMSStaff = { isStaffUser, authenticate, open, close };
+  // Read/write hooks used by registrar.js so the portals share one set of records
+  window.SIMSStaff = {
+    isStaffUser, authenticate, open, close,
+    classes: () => db.classes,
+    userName,
+    gradeSheets: gradeSheetsList,
+    setGradeStatus,
+    attendanceSummary,
+    attendanceAlerts: () => db.fac.alerts.map((a) => ({ date: a.date, student: a.student, type: a.type, message: a.message })),
+    record,
+    auditFor: (username, n) => db.audit.filter((a) => a.user === username).slice(0, n || 50).map((a) => ({ ts: a.ts, mod: a.mod, act: a.act, desc: a.desc }))
+  };
 })();

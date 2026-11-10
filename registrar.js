@@ -1,0 +1,428 @@
+/* =====================================================
+   BITS-SIMS REGISTRAR PORTAL
+   -----------------------------------------------------
+   Replaces admin.js + admin2.js. That pair was one portal
+   that mixed Registrar work with ICT/EdTech system admin
+   (Users & Access, Audit & System, backups, roles). Now:
+
+     Registrar  -> this file       (records, enrollment, documents)
+     ICT / EdTech / Dept Head / Faculty -> staff.js
+
+   What the Registrar can do (design reference 8.2):
+     Student registration ......... Full
+     Student profiles / corrections Full / Approve
+     Student documents ............ Full
+     Enrollment management ........ Full
+     Class assignment / scheduling  View only
+     Attendance ................... View only (faculty encode it)
+     Grades ....................... Approve / finalize (post)
+     Academic records, reports .... Full
+     Audit trails ................. Restricted (own activity only)
+     Accounts, roles, backup, monitoring ... None (ICT Services)
+
+   Shared stores (localStorage), so each side sees the other:
+     bits-sims-corrections  student name-change requests  -> Profile Corrections
+     bits-sims-documents    uploads + COR/COE/TOR requests -> Document Management
+     bits-sims-admissions   applications                   -> Admissions & Enrollment
+     bits-sims-academic     grades (via SIMSData)          -> Student grade releases
+     bits-sims-profile      official profile (on approval)
+     bits-sims-registry     students + setup (registry.js)
+   Faculty grade sheets and class offerings come from staff.js
+   (window.SIMSStaff), so the grade chain is
+   Faculty -> Department Head -> Registrar (posts).
+
+   Log in as registrar.santos (see accounts.js).
+===================================================== */
+(function () {
+  'use strict';
+
+  const K = { docs: 'bits-sims-documents', adm: 'bits-sims-admissions', cor: 'bits-sims-corrections', prof: 'bits-sims-profile', me: 'bits-sims-registrar-me' };
+  const rd = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } };
+  const wr = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const today = () => new Date().toISOString().slice(0, 10);
+  const $ = (s) => document.querySelector(s);
+  const val = (id) => ($('#' + id) || {}).value || '';
+  const badge = (cls, t) => `<span class="dm-status ${cls}">${esc(t)}</span>`;
+  const staff = () => window.SIMSStaff || null;
+
+  const DEMO_STUDENT = '2024-12345'; // the student who has a portal login (sample data)
+  const DOC_REQ = { cor: 'Certificate of Registration', coe: 'Certificate of Enrollment', tor: 'Transcript of Records' };
+
+  let acct = null, page = 'home', sel = null;
+  let fl = { q: '', st: '' }, tab = 'Overview', viewNo = null, rtab = 'Student Records', stab = 'Departments', mtab = 'Applications';
+
+  /* ---------- Registry + settings ---------- */
+  const reg = () => window.SIMSRegistry.get();
+  const saveReg = (d) => window.SIMSRegistry.save(d);
+  const settings = () => Object.assign({ email: acct.email, mobile: acct.contact, office: acct.dept, pw: '', notif: { queue: true, grades: true, login: false } }, rd(K.me + ':' + acct.username, {}));
+  const saveSettings = (m) => wr(K.me + ':' + acct.username, m);
+
+  /* ---------- Audit (shared with the ICT audit trail) ---------- */
+  const log = (desc, mod, ent, rec, action) => {
+    if (staff() && acct) staff().record(acct.username, mod || 'Registration', ent || 'Students', rec || '', action || 'UPDATE', desc);
+  };
+
+  /* ---------- Queries ---------- */
+  const corrections = () => rd(K.cor, []);
+  const docs = () => rd(K.docs, { requirements: [], requests: {} });
+  const adm = () => rd(K.adm, { applications: [] });
+  const periods = () => SIMSData.rules().gradingPeriods.map((p) => p.key).concat('final');
+  // Student-portal grade releases (what the student sees once POSTED)
+  function gradeQueue() {
+    const out = [];
+    SIMSData.get().subjects.forEach((s) => periods().forEach((k) => {
+      const st = s.gradeStatus && s.gradeStatus[k];
+      if (st === 'submitted' || st === 'approved') out.push({ s, k, st, v: k === 'final' ? s.finalGrade : s.grades[k] });
+    }));
+    return out;
+  }
+  // Faculty grade sheets that went Faculty -> Dept Head (see staff.js)
+  const sheets = () => (staff() ? staff().gradeSheets() : []);
+
+  /* ---------- Small view helpers ---------- */
+  const table = (h, rows) => `<table class="ad-table"><tr>${h.map((x) => `<th>${esc(x)}</th>`).join('')}</tr>${rows.map((r) => `<tr>${r.map((c) => `<td>${String(c).startsWith('<') ? c : esc(c)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${h.length}">Nothing here yet.</td></tr>`}</table>`;
+  const tabs = (list, cur, key) => `<div class="ad-tabs">${list.map((t) => `<button class="ad-btn ${t === cur ? '' : 'alt'}" data-x="${key}" data-v="${esc(t)}">${esc(t)}</button>`).join('')}</div>`;
+  const stCls = (s) => (s === 'Active' || s === 'Enrolled' ? 'ok' : s === 'On Leave' || s === 'Archived' || s === 'Pending' ? 'warn' : 'info');
+  const initials = (n) => n.replace(/^(Dr\.|Prof\.)\s*/i, '').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  const oldest = (dates) => { const t = dates.filter(Boolean).map((x) => new Date(x).getTime()).filter((n) => n); if (!t.length) return '\u2014'; const n = Math.max(0, Math.round((Date.now() - Math.min(...t)) / 864e5)); return n + (n === 1 ? ' day' : ' days'); };
+  const f2 = (n) => (n == null ? '\u2014' : n.toFixed(2));
+
+  /* =====================================================
+     PAGES
+  ===================================================== */
+  const pages = {};
+
+  /* ---- Home ---- */
+  pages.home = () => {
+    const d = reg(), docsD = docs();
+    const apps = adm().applications.filter((a) => a.status === 'pending' || a.status === 'review');
+    const cor = corrections().filter((c) => c.status === 'pending');
+    const dd = docsD.requirements.filter((r) => r.status === 'review');
+    const enrWait = d.enrollments.filter((e) => e.status === 'Pending' || e.status === 'Verified').length;
+    const gqStudent = gradeQueue().length, gqFaculty = sheets().filter((s) => s.status === 'Approved').length;
+    const act = (staff() ? staff().auditFor(acct.username, 20) : []).filter((x) => x.act !== 'LOGIN' && x.act !== 'LOGOUT').slice(0, 4);
+    const att = SIMSData.get().subjects.map((x) => SIMSData.attendanceRate(x.attendance)).filter((n) => n != null), rate = att.length ? Math.round(att.reduce((a, b) => a + b, 0) / att.length) : 0;
+    const now = new Date(), first = new Date(now.getFullYear(), now.getMonth(), 1).getDay(), days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const cal = ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((x) => `<b>${x}</b>`).join('') + '<span></span>'.repeat(first) + Array.from({ length: days }, (_, i) => `<span class="${i + 1 === now.getDate() ? 'td' : ''}">${i + 1}</span>`).join('');
+    const q = [
+      ['Admission applications to decide', apps.length, oldest(apps.map((a) => a.submitted)), 'admissions'],
+      ['Term enrollments to verify', enrWait, '\u2014', 'admissions'],
+      ['Profile correction requests', cor.length, oldest(cor.map((c) => c.date)), 'corrections'],
+      ['Documents awaiting verification', dd.length + Object.keys(docsD.requests).length, oldest(dd.map((r) => r.updated).concat(Object.values(docsD.requests))), 'documents'],
+      ['Grades awaiting posting', gqStudent + gqFaculty, '\u2014', 'records']
+    ];
+    return `<div class="ad-stats" style="grid-template-columns:repeat(5,1fr)">${[['Total students', d.students.length], ['Active students', d.students.filter((s) => s.status === 'Active').length], ['Departments', d.setup.Departments.length], ['Programs', d.setup.Programs.length], ['Enrolled this term', d.enrollments.filter((e) => e.status === 'Enrolled').length]].map((r) => `<div class="ad-card"><small>${r[0]}</small><b>${r[1]}</b></div>`).join('')}</div>
+      <div class="ad-card" style="margin-bottom:1rem"><small>Overall attendance rate</small><b>${rate}%</b></div>
+      <div class="ad-row"><div class="ad-card ad-id"><span class="ad-ra big">${esc(initials(acct.name))}</span><span>${esc(acct.name)}<br>${esc(acct.title)}</span></div>
+      <div class="ad-card"><table class="ad-queue" style="width:100%;font-size:.8rem;border-collapse:collapse"><tr style="color:#17305e;border-bottom:2px solid var(--blue)"><th style="text-align:left;padding:.4rem">Pending Queues</th><th>Pending</th><th>Oldest</th></tr>${q.map((r) => `<tr data-go="${r[3]}"><td style="padding:.55rem .4rem;color:var(--blue)">${esc(r[0])}</td><td style="color:var(--blue)">${r[1]}</td><td style="color:var(--blue)">${r[2]}</td></tr>`).join('')}</table></div>
+      <div class="ad-card ad-cal"><h4>${now.toLocaleString('en', { month: 'long', year: 'numeric' })}</h4><div>${cal}</div></div></div>
+      <div class="ad-row2"><div class="ad-card"><h3 style="margin-top:0">Recent Activities</h3><ul class="ad-list">${act.length ? act.map((x) => `<li>${esc(x.desc)}</li>`).join('') : '<li>No activity yet.</li>'}</ul></div><button class="ad-tile" data-x="newstu"><svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 11v6M9 14h6"/></svg>Register Student</button></div>`;
+  };
+
+  /* ---- Student Profiles + Register + Profile + Corrections ---- */
+  pages.students = () => {
+    const d = reg(), q = fl.q.toLowerCase();
+    const rows = d.students.filter((s) => (!q || (s.no + s.name).toLowerCase().includes(q)) && (!fl.st || s.status === fl.st)).map((s) => [s.no, s.name, s.program, s.year, badge(stCls(s.status), s.status), `<a data-x="view" data-v="${esc(s.no)}">View Profile</a><a data-x="${s.status === 'Archived' ? 'restore' : 'archive'}" data-v="${esc(s.no)}">${s.status === 'Archived' ? 'Restore' : 'Archive'}</a>`]);
+    return `<h1>Student Profiles</h1><p class="ad-note">Search, review, and manage registered students.</p>
+      <p class="ad-filters"><input id="fq" placeholder="Student number or name" value="${esc(fl.q)}"> <select id="fs"><option value="">All statuses</option>${['Active', 'On Leave', 'Archived'].map((x) => `<option ${fl.st === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
+      <button class="ad-btn" data-x="filter">Filter</button> <button class="ad-btn alt" data-go="corrections">Review Profile Correction</button> <button class="ad-btn" data-x="newstu">Register Student</button></p>
+      ${table(['Student No.', 'Name', 'Program', 'Year', 'Status', 'Actions'], rows)}<p class="ad-note">Showing ${rows.length} of ${d.students.length}. Records are deactivated or archived, never deleted.</p>`;
+  };
+
+  pages.register = () => {
+    const d = reg(), depts = d.setup.Departments.map((x) => x[0]), progs = d.setup.Programs.filter((x) => x[3] === 'Active').map((x) => x[0]);
+    const F = [['Admission', [['dept', 'Department', depts], ['program', 'Program', progs], ['admission', 'Admission Type', ['Freshman', 'Transferee', 'Returnee']], ['year', 'Year Level', ['1st', '2nd', '3rd', '4th']]]],
+      ['Personal Information', [['first', 'First Name *'], ['middle', 'Middle Name'], ['last', 'Last Name *'], ['dob', 'Date of Birth']]], ['Contact Information', [['email', 'Personal Email'], ['mobile', 'Mobile Number'], ['city', 'City']]],
+      ['Parent / Guardian', [['gname', 'Guardian Name'], ['gnum', 'Contact Number']]], ['Emergency Contact', [['ename', 'Contact Name'], ['enum', 'Contact Number']]]];
+    return `<h1>Register Student</h1>${F.map(([t, fs]) => `<div class="ad-panel"><h3>${t}</h3><div class="ad-grid">${fs.map(([id, l, o]) => `<label>${l}${o ? `<select id="f_${id}">${o.map((x) => `<option>${esc(x)}</option>`).join('')}</select>` : `<input id="f_${id}">`}</label>`).join('')}</div></div>`).join('')}
+      <p><button class="ad-btn" data-x="savestu">Save Student</button> <button class="ad-btn alt" data-go="students">Cancel</button></p><p class="ad-note">The student number is generated on save, and a pending term enrollment is created for verification.</p>`;
+  };
+
+  pages.profile = () => {
+    const d = reg(), s = d.students.find((x) => x.no === viewNo) || d.students[0], real = s.no === DEMO_STUDENT;
+    const T = ['Overview', 'General Information', 'Contact Information', 'Guardian Information', 'Grades', 'Documents'];
+    let body;
+    if (tab === 'Grades') body = real ? table(['Course', 'Midterm', 'Final', 'Status'], SIMSData.get().subjects.filter((x) => x.termId === '2627-1').map((x) => [x.code, x.grades.midterm == null ? '\u2014' : x.grades.midterm, x.finalGrade == null ? '\u2014' : x.finalGrade, (x.gradeStatus && x.gradeStatus.midterm) || 'posted'])) : '<p>No grades on file.</p>';
+    else if (tab === 'Documents') body = real ? table(['Document', 'Status'], docs().requirements.map((r) => [r.name, r.status])) : '<p>No documents on file.</p>';
+    else body = table(['Field', 'Value'], tab === 'Contact Information' ? [['Email', s.email || '\u2014'], ['Mobile', s.mobile || '\u2014'], ['City', s.city || '\u2014']]
+      : tab === 'General Information' ? [['Admission type', s.admission], ['Department', s.dept], ['Date of birth', s.dob || '\u2014']]
+      : tab === 'Guardian Information' ? [['Guardian', s.gname || '\u2014'], ['Guardian contact', s.gnum || '\u2014'], ['Emergency contact', s.ename || '\u2014'], ['Emergency number', s.enum || '\u2014']]
+      : [['Student number', s.no], ['Name', s.name], ['Program', s.program], ['Year', s.year], ['Status', s.status]]);
+    return `<h1>${esc(s.name)}</h1><p>${esc(s.no)} \u00B7 ${esc(s.program)} \u00B7 ${esc(s.year)} Year \u00B7 ${esc(s.status)}</p>${tabs(T, tab, 'tab')}${body}<p><button class="ad-btn alt" data-go="students">Back</button></p>`;
+  };
+
+  pages.corrections = () => {
+    const all = corrections();
+    const cur = all.find((x) => x.id === sel) || all.find((x) => x.status === 'pending');
+    const rows = all.map((x) => `<tr data-sel="${esc(x.id)}" class="${cur && cur.id === x.id ? 'on' : ''}"><td>${esc(x.student)}</td><td>${esc(x.label)}</td><td>${esc(x.next)}</td><td>${esc(x.date)}</td><td>${badge(x.status === 'pending' ? 'warn' : x.status === 'approved' ? 'ok' : 'risk', x.status)}</td></tr>`).join('');
+    const panel = cur ? `<div class="ad-panel"><h3>Review Request</h3>
+      <p><small>Field</small> <b>${esc(cur.label)}</b></p><p><small>Existing value</small> <b>${esc(cur.old)}</b></p>
+      <p><small>Requested value</small> <b>${esc(cur.next)}</b></p><p><small>Reason</small> <b>${esc(cur.reason || '\u2014')}</b></p>
+      ${cur.status === 'pending' ? `<textarea id="adRemarks" placeholder="Review remarks"></textarea>
+      <button class="ad-btn" data-cor="approved" data-id="${esc(cur.id)}">Approve</button> <button class="ad-btn alt" data-cor="rejected" data-id="${esc(cur.id)}">Reject</button>`
+      : `<p><small>Decision</small> <b>${esc(cur.status)}</b> \u2014 ${esc(cur.remarks || 'no remarks')}</p>`}</div>` : '';
+    return `<h1>Profile Correction Requests</h1><p class="ad-sub">Review name and detail changes requested by students.</p><div class="ad-split">
+      <table class="ad-table"><tr><th>Student</th><th>Field</th><th>Requested</th><th>Date</th><th>Status</th></tr>${rows || '<tr><td colspan="5">No requests yet. A student name change in Account Settings appears here.</td></tr>'}</table>${panel}</div>
+      <p><button class="ad-btn alt" data-go="students">Back to Student Profiles</button></p>`;
+  };
+
+  /* ---- Admissions & Enrollment ---- */
+  pages.admissions = () => {
+    const d = reg();
+    let body;
+    if (mtab === 'Applications') {
+      const rows = adm().applications.map((a) => `<tr><td>${esc(a.id)}</td><td>${esc(a.program)}</td><td>${esc(a.type)}</td><td>${esc(a.term)}</td><td>${badge(a.status === 'accepted' ? 'ok' : a.status === 'rejected' ? 'risk' : a.status === 'review' ? 'info' : 'warn', a.status)}</td>
+        <td>${a.status === 'pending' ? `<a data-app="review" data-id="${esc(a.id)}">Start review</a> ` : ''}${a.status === 'pending' || a.status === 'review' ? `<a data-app="accepted" data-id="${esc(a.id)}">Accept</a> <a data-app="rejected" data-id="${esc(a.id)}">Reject</a>` : ''}</td></tr>`).join('');
+      body = `<table class="ad-table"><tr><th>App. No.</th><th>Program</th><th>Type</th><th>Term</th><th>Status</th><th>Actions</th></tr>${rows || '<tr><td colspan="6">No applications yet.</td></tr>'}</table>
+        <p class="ad-note">Decisions are shown to the applicant under Admissions &amp; Enrollment \u2192 Application Status.</p>`;
+    } else if (mtab === 'Term Enrollment') {
+      body = table(['Ref. No.', 'Student', 'Term', 'Program', 'Year', 'Units', 'Status', 'Action'], d.enrollments.map((e) => [e.ref, e.student, e.term, e.program, e.year, e.units, badge(stCls(e.status === 'Verified' ? 'info' : e.status), e.status),
+        e.status === 'Pending' ? `<a data-x="enr" data-v="${esc(e.ref)}">Verify</a>` : e.status === 'Verified' ? `<a data-x="enr" data-v="${esc(e.ref)}">Approve &amp; enroll</a>` : '']))
+        + '<p class="ad-note">Pending \u2192 Verified \u2192 Enrolled. Each step is recorded in the audit trail.</p>';
+    } else {
+      body = table(['Student', 'Class Offering', 'Section', 'Date Added', 'Status'], [['Dela Cruz, Carlo Miguel', 'ITP3112R', '3B', 'Aug 12', badge('ok', 'Enrolled')], ['Santos, Maria', 'ITP3111R', '3B', 'Aug 13', badge('warn', 'Full, override needed')]])
+        + '<p class="ad-note">Duplicate enrollment in the same class is blocked. Enrolling past capacity needs a recorded override.</p>';
+    }
+    return `<h1>Admissions &amp; Enrollment</h1>${tabs(['Applications', 'Term Enrollment', 'Class Enrollment'], mtab, 'mtab')}${body}`;
+  };
+
+  /* ---- Attendance (view only: faculty encode it) ---- */
+  pages.attendance = () => {
+    const s = staff();
+    const rows = (s ? s.attendanceSummary() : []).map((r) => [r.code + ' \u00B7 ' + r.title, r.section, r.faculty, r.held, r.absent, r.late, r.rate == null ? '\u2014' : r.rate.toFixed(1) + '%']);
+    const alerts = (s ? s.attendanceAlerts() : []).slice(0, 8).map((a) => [a.date, a.student, a.type, a.message]);
+    return `<h1>Attendance</h1><p class="ad-sub">Read-only. Assigned faculty encode attendance; the Registrar can review it.</p>
+      <h3>Class attendance summary</h3>${table(['Course', 'Section', 'Faculty', 'Meetings held', 'Absences', 'Late', 'Rate'], rows)}
+      <h3>Attendance alerts</h3>${table(['Date', 'Student', 'Type', 'Details'], alerts)}
+      <p class="ad-note">Alert thresholds and recipients are configured by ICT Services under System Settings.</p>`;
+  };
+
+  /* ---- Academic Records ---- */
+  pages.records = () => {
+    const d = reg(), R = ['Student Records', 'Class & Scheduling', 'Grade Management', 'Academic Setup'], t = SIMSData.currentTerm(), sm = SIMSData.termSummary(t.id);
+    let body;
+    if (rtab === 'Student Records') {
+      const me = d.students.find((x) => x.no === DEMO_STUDENT) || d.students[0];
+      body = `<div class="ad-row2" style="grid-template-columns:1fr 160px 160px"><div class="ad-card" style="display:flex;gap:1rem;align-items:center"><span class="ad-ra">${esc(initials(me.name.split(', ').reverse().join(' ')))}</span><div><b style="font-size:1.05rem;margin:0">${esc(me.name)}</b><small style="text-transform:none">${esc(me.no)} \u00B7 ${esc(me.program)} \u00B7 ${esc(me.year)} Year</small></div></div><div class="ad-card"><small>Term GPA</small><b>${f2(sm.gwa)}</b></div><div class="ad-card"><small>Cumulative GPA</small><b>${f2(SIMSData.cumulativeGwa())}</b></div></div>
+        ${table(['Course', 'Units', 'Midterm', 'Final', 'Remarks', 'Status'], sm.subjects.map((x) => [x.code + ' \u00B7 ' + x.title, x.units.toFixed(1), f2(x.grades.midterm), f2(x.finalGrade), x.status === 'inprogress' ? 'In progress' : x.status, (SIMSData.raw.subject(x.id).gradeStatus || {}).midterm || 'posted']))}<p class="ad-note">Posted grades change only through the controlled correction process.</p>`;
+    } else if (rtab === 'Grade Management') {
+      body = gradePanels();
+    } else if (rtab === 'Academic Setup') {
+      body = tabs(Object.keys(d.setup), stab, 'stab') + table(['Code', 'Name', 'Detail', 'Status'], d.setup[stab]) + '<p class="ad-note">View only. Departments, programs and terms follow school policy; schedules are managed by Department Heads and EdTech Services.</p>';
+    } else {
+      const cl = staff() ? staff().classes() : [];
+      body = `${table(['Course', 'Section', 'Faculty', 'Schedule', 'Room', 'Enrolled'], cl.map((c) => [c.code + ' \u00B7 ' + c.title, c.section, staff().userName(c.faculty), c.day.slice(0, 3) + ' ' + c.start + '\u2013' + c.end, c.room, c.size + ' / ' + c.capacity]))}
+        <p class="ad-note">View only. Department Heads create class offerings and assign faculty; EdTech Services adjust schedules and rooms.</p>`;
+    }
+    return `<h1>Academic Records</h1><p class="ad-sub">Review and finalize official grades and academic history.</p>${tabs(R, rtab, 'rtab')}${body}`;
+  };
+
+  function gradePanels() {
+    const sh = sheets();
+    const fRows = sh.map((g, i) => [g.code + ' \u00B7 ' + g.title, g.section, g.faculty, g.period, badge(g.status === 'Posted' ? 'ok' : g.status === 'Approved' ? 'info' : g.status === 'Returned' ? 'risk' : 'warn', g.status === 'Approved' ? 'Approved by Dept Head' : g.status),
+      g.status === 'Approved' ? `<a data-x="sheet-post" data-v="${i}">Post official</a><a data-x="sheet-return" data-v="${i}">Return</a>` : g.status === 'Submitted' ? '<small>With Department Head</small>' : '']);
+    const q = gradeQueue();
+    const sRows = q.map((g, i) => [g.s.code, g.s.title, g.k, g.v == null ? '\u2014' : Number(g.v).toFixed(2), badge(g.st === 'approved' ? 'info' : 'warn', g.st), `<a data-gr="${i}">${g.st === 'submitted' ? 'Approve' : 'Post official'}</a>`]);
+    return `<h3>Faculty grade sheets</h3>${table(['Course', 'Section', 'Faculty', 'Period', 'Status', 'Action'], fRows)}
+      <p class="ad-note">Faculty submit \u2192 Department Head approves \u2192 the Registrar posts. Posted grades change only through a correction process.</p>
+      <h3>Student portal releases</h3>${table(['Code', 'Course', 'Period', 'Grade', 'Status', 'Action'], sRows)}
+      <p class="ad-note">Students only see grades once they are posted.</p>`;
+  }
+
+  /* ---- Reports (CSV export, logged) ---- */
+  const REP = {
+    master: ['Student Master List', () => [['Student No', 'Name', 'Program', 'Year', 'Status']].concat(reg().students.map((s) => [s.no, s.name, s.program, s.year, s.status]))],
+    status: ['Student Status Report', () => [['Status', 'Students']].concat(Object.entries(reg().students.reduce((a, s) => (a[s.status] = (a[s.status] || 0) + 1, a), {})))],
+    admission: ['Student Admission Report', () => [['App. No.', 'Program', 'Type', 'Term', 'Status']].concat(adm().applications.map((a) => [a.id, a.program, a.type, a.term, a.status]))],
+    enroll: ['Enrollment Summary', () => [['Program', 'Students']].concat(Object.entries(reg().students.reduce((a, s) => (a[s.program] = (a[s.program] || 0) + 1, a), {})))],
+    classlist: ['Class List', () => [['Course', 'Section', 'Faculty', 'Enrolled']].concat((staff() ? staff().classes() : []).map((c) => [c.code, c.section, staff().userName(c.faculty), c.size]))],
+    att: ['Attendance Summary', () => [['Course', 'Section', 'Held', 'Absent', 'Late']].concat((staff() ? staff().attendanceSummary() : []).map((r) => [r.code, r.section, r.held, r.absent, r.late]))]
+  };
+  pages.reports = () => `<h1>Reports &amp; Analytics Generation</h1><p class="ad-note">Generate and export reports within your access scope.</p><div class="ad-cards">${Object.entries(REP).map(([k, r]) => `<button class="ad-card" data-x="rep" data-v="${k}"><small>Export CSV</small><b style="font-size:1.1rem">${esc(r[0])}</b></button>`).join('')}</div>`;
+
+  /* ---- Document Management ---- */
+  pages.documents = () => {
+    const d = docs();
+    const rows = d.requirements.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.file ? esc(r.file.name) : '\u2014'}</td><td>${badge(r.status === 'verified' ? 'ok' : r.status === 'review' ? 'info' : r.status === 'rejected' ? 'risk' : 'warn', r.status)}</td><td>${esc(r.updated || '\u2014')}</td>
+      <td>${r.status === 'review' ? `<a data-doc="verified" data-id="${esc(r.id)}">Verify</a> <a data-doc="rejected" data-id="${esc(r.id)}">Reject</a>` : ''}</td></tr>`).join('');
+    const req = Object.keys(d.requests).map((id) => `<li>${esc(DOC_REQ[id] || id)} <small>\u00B7 requested ${esc(d.requests[id])}</small> <a data-rel="${esc(id)}">Mark released</a></li>`).join('');
+    return `<h1>Document Management</h1><h3>Verification queue</h3>
+      <table class="ad-table"><tr><th>Document</th><th>File</th><th>Status</th><th>Updated</th><th>Action</th></tr>${rows}</table>
+      <h3>Official document requests</h3><ul class="ad-list">${req || '<li>No pending requests.</li>'}</ul>`;
+  };
+
+  /* ---- Activity Log (audit trails: restricted to the Registrar's own activity) ---- */
+  pages.activity = () => {
+    const l = staff() ? staff().auditFor(acct.username, 60) : [];
+    return `<h1>Activity Log</h1><p class="ad-sub">Your own recent activity. Full audit trails are available to ICT Services.</p>
+      ${table(['Time', 'Module', 'Action', 'Description'], l.map((x) => [x.ts, x.mod, x.act, x.desc]))}
+      <p class="ad-note">Entries are append-only and never store passwords.</p>`;
+  };
+
+  /* ---- Account Settings ---- */
+  pages.settings = () => {
+    const m = settings();
+    return `<h1>Account Settings</h1><div class="ad-panel"><h3>Contact details</h3><div class="ad-grid"><label>Work email<input id="s_email" value="${esc(m.email)}"></label><label>Mobile<input id="s_mobile" value="${esc(m.mobile)}"></label><label>Office<input id="s_office" value="${esc(m.office)}"></label></div><p><button class="ad-btn" data-x="savecontact">Save changes</button></p></div>
+    <div class="ad-panel"><h3>Change password</h3><div class="ad-grid"><label>Current<input id="p_cur" type="password"></label><label>New<input id="p_new" type="password"></label><label>Confirm<input id="p_con" type="password"></label></div><p><button class="ad-btn" data-x="savepw">Update password</button></p><p class="ad-note">Use at least 8 characters with letters and numbers.</p></div>
+    <div class="ad-panel"><h3>Alerts</h3>${[['queue', 'Queue alerts'], ['grades', 'Grade submissions'], ['login', 'Login alerts']].map(([k, l]) => `<label><input type="checkbox" class="nt" value="${k}" ${m.notif[k] ? 'checked' : ''}> ${l}</label> `).join('')}<p><button class="ad-btn" data-x="savenotif">Save alerts</button></p></div>`;
+  };
+
+  /* =====================================================
+     SHELL
+  ===================================================== */
+  const NAV = [['home', 'Home'], ['students', 'Student Profiles'], ['admissions', 'Admissions & Enrollment'], ['attendance', 'Attendance'], ['records', 'Academic Records'], ['reports', 'Reports & Analytics Generation'], ['documents', 'Document Management'], ['activity', 'Activity Log'], ['settings', 'Account Settings']];
+  // Sub-pages highlight their parent in the sidebar
+  const PARENT = { register: 'students', profile: 'students', corrections: 'students' };
+
+  const ICON = { activity: '<path d="M3 12h4l3-8 4 16 3-8h4"/>' };
+  const icon = (k) => {
+    const src = { home: 'home', students: 'profile', admissions: 'admissions', attendance: 'attendance', records: 'records', reports: 'reports', documents: 'documents', settings: 'settings' }[k];
+    const el = src && document.querySelector(`.sidebar-item[data-page="${src}"] svg`);
+    if (el) return el.outerHTML;
+    if (k === 'logout') { const lo = document.querySelector('#logoutBtn svg'); if (lo) return lo.outerHTML; }
+    return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON[k] || ''}</svg>`;
+  };
+
+  function render() {
+    const root = $('#registrarView');
+    const cur = NAV.find((n) => n[0] === page) || NAV.find((n) => n[0] === (PARENT[page] || 'home'));
+    const logo = document.querySelector('.nav-logo');
+    root.innerHTML = `<header class="top-nav"><div class="nav-brand">${logo ? `<img class="nav-logo" src="${esc(logo.getAttribute('src'))}" alt="">` : ''}<span class="nav-title">BITS-SIMS</span><span class="staff-role-chip">Registrar Portal</span></div>
+      <div class="nav-user-area"><span class="nav-page-label">${esc(cur[0] === 'home' ? 'Dashboard' : cur[1])}</span><span class="nav-divider"></span><span class="ad-ra" title="${esc(acct.name)}">${esc(initials(acct.name))}</span></div></header>
+      <div class="app-layout"><nav class="sidebar"><ul class="sidebar-menu">${NAV.map((n) => `<li><a href="#" class="sidebar-item ${n[0] === cur[0] ? 'active' : ''}" data-go="${n[0]}">${icon(n[0])}<span>${esc(n[1])}</span></a></li>`).join('')}
+      <li><a href="#" class="sidebar-item logout-link" data-go="logout">${icon('logout')}<span>Log Out</span></a></li></ul></nav>
+      <main class="dashboard-main"><div class="dashboard-panel ad-body">${pages[page]()}</div></main></div>`;
+    root.querySelectorAll('.ad-table').forEach((t) => { if (!t.parentElement.classList.contains('ad-tw')) { const w = document.createElement('div'); w.className = 'ad-tw'; t.replaceWith(w); w.appendChild(t); } });
+  }
+  const go = (p) => { page = p; sel = null; render(); };
+
+  /* =====================================================
+     ACTIONS
+  ===================================================== */
+  function act(t) {
+    const d = t.dataset;
+    if (d.go) { if (d.go === 'logout') return close(); return go(d.go); }
+    if (d.sel) { sel = d.sel; return render(); }
+
+    if (d.cor) {                               // approve / reject a profile correction
+      const all = corrections(), x = all.find((c) => c.id === d.id);
+      const remarks = ($('#adRemarks') || {}).value || '';
+      if (d.cor === 'rejected' && !remarks.trim()) return alert('Add review remarks before rejecting.');
+      x.status = d.cor; x.remarks = remarks; x.reviewedBy = acct.username; x.reviewed = today();
+      if (x.status === 'approved') { const p = rd(K.prof, {}); p[x.field] = x.next; wr(K.prof, p); }
+      wr(K.cor, all); log(`Profile correction ${x.status}: ${x.label} for ${x.student}`, 'Profile Management', 'ProfileCorrectionRequests', x.id, x.status === 'approved' ? 'APPROVE' : 'UPDATE');
+    } else if (d.app) {                        // admission decision
+      const ap = adm(), a = ap.applications.find((i) => i.id === d.id);
+      let remarks = '';
+      if (d.app === 'rejected') { remarks = prompt('Reason for rejection (shown to the applicant):'); if (remarks === null) return; }
+      a.status = d.app; a.verified = a.verified || today(); a.verifiedTime = a.verifiedTime || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      if (a.status !== 'review') { a.decision = today(); a.remarks = remarks || (a.status === 'accepted' ? 'Congratulations on your admission. Please continue to enrollment.' : ''); }
+      wr(K.adm, ap); log(`Application ${a.id} set to ${a.status}`, 'Registration', 'AdmissionApplications', a.id, a.status === 'review' ? 'UPDATE' : 'APPROVE');
+    } else if (d.doc) {                        // verify / reject an uploaded requirement
+      const dc = docs(), r = dc.requirements.find((i) => i.id === d.id);
+      let note = '';
+      if (d.doc === 'rejected') { note = prompt('Reason for rejection (shown to the student):'); if (note === null) return; }
+      Object.assign(r, { status: d.doc, note, updated: today() });
+      wr(K.docs, dc); log(`Document ${r.name} ${r.status}`, 'Documents', 'StudentDocuments', r.id, 'APPROVE');
+    } else if (d.rel) {                        // official document request released
+      const dc = docs(); delete dc.requests[d.rel]; wr(K.docs, dc); log(`${DOC_REQ[d.rel]} released`, 'Documents', 'StudentDocuments', d.rel, 'EXPORT');
+    } else if (d.gr !== undefined) {           // student-portal grade release: submitted -> approved -> posted
+      const g = gradeQueue()[Number(d.gr)], next = g.st === 'submitted' ? 'approved' : 'posted';
+      SIMSData.update((x) => { x.subjects.find((s) => s.id === g.s.id).gradeStatus[g.k] = next; });
+      log(`${g.s.code} ${g.k} grade ${next}`, 'Grades', 'StudentGrades', g.s.code + '|' + g.k, 'APPROVE');
+    } else if (d.x) {
+      if (!doX(d.x, d.v)) return;
+    } else return;
+    render();
+  }
+
+  // Actions that use data-x / data-v. Returns false when it handled everything itself (no re-render needed).
+  function doX(a, v) {
+    const d = reg();
+    if (a === 'filter') fl = { q: val('fq'), st: val('fs') };
+    else if (a === 'newstu') { go('register'); return false; }
+    else if (a === 'view') { viewNo = v; tab = 'Overview'; go('profile'); return false; }
+    else if (a === 'tab') tab = v;
+    else if (a === 'rtab') rtab = v;
+    else if (a === 'stab') stab = v;
+    else if (a === 'mtab') mtab = v;
+    else if (a === 'archive' || a === 'restore') {
+      const s = d.students.find((x) => x.no === v); s.status = a === 'archive' ? 'Archived' : 'Active'; saveReg(d);
+      log(`Student ${v} ${s.status}`, 'Registration', 'Students', v, 'UPDATE');
+    } else if (a === 'savestu') {
+      if (!val('f_first').trim() || !val('f_last').trim()) { alert('First and last name are required.'); return false; }
+      const no = '2026-' + String(d.students.filter((s) => s.no.startsWith('2026-')).length + 1).padStart(4, '0');
+      const name = `${val('f_last').trim()}, ${val('f_first').trim()}${val('f_middle').trim() ? ' ' + val('f_middle').trim() : ''}`;
+      d.students.push({ no, name, program: val('f_program'), year: val('f_year'), status: 'Active', dept: val('f_dept'), admission: val('f_admission'), email: val('f_email'), mobile: val('f_mobile'), city: val('f_city'), dob: val('f_dob'), gname: val('f_gname'), gnum: val('f_gnum'), ename: val('f_ename'), enum: val('f_enum') });
+      d.enrollments.push({ ref: 'ENR-' + String(d.enrollments.length + 1).padStart(4, '0'), student: name, no, term: '1st Sem 2026-27', program: val('f_program'), year: val('f_year'), units: '\u2014', status: 'Pending' });
+      saveReg(d); log(`Registered student ${no}`, 'Registration', 'Students', no, 'CREATE'); fl = { q: '', st: '' }; go('students'); alert('Student registered: ' + no); return false;
+    } else if (a === 'enr') {
+      const e = d.enrollments.find((x) => x.ref === v); if (!e) return false;
+      e.status = e.status === 'Pending' ? 'Verified' : 'Enrolled'; saveReg(d);
+      log(`Enrollment ${e.ref} ${e.status.toLowerCase()}`, 'Enrollment', 'StudentEnrollments', e.ref, e.status === 'Enrolled' ? 'APPROVE' : 'UPDATE');
+    } else if (a === 'sheet-post' || a === 'sheet-return') {
+      const g = sheets()[Number(v)]; if (!g || g.status !== 'Approved') return false;
+      let note = '';
+      if (a === 'sheet-return') { note = prompt('Reason for returning the grades to the faculty:'); if (note === null) return false; if (!note.trim()) { alert('A reason is required.'); return false; } }
+      staff().setGradeStatus(g.classId, g.period, a === 'sheet-post' ? 'Posted' : 'Returned', acct.username, note);
+    } else if (a === 'rep') {
+      const r = REP[v], csv = r[1]().map((row) => row.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const l = document.createElement('a'); l.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' })); l.download = v + '.csv'; l.click();
+      log(`Exported ${r[0]}`, 'Reports', 'GeneratedReports', v, 'EXPORT'); return false;
+    } else if (a === 'savecontact') {
+      const m = settings(); Object.assign(m, { email: val('s_email'), mobile: val('s_mobile'), office: val('s_office') }); saveSettings(m); alert('Saved.'); return false;
+    } else if (a === 'savepw') {
+      const m = settings(), n = val('p_new');
+      if (!val('p_cur')) { alert('Enter your current password.'); return false; }
+      if (val('p_cur') !== (m.pw || acct.password)) { alert('Current password is incorrect.'); return false; }
+      if (n.length < 8 || !/[a-z]/i.test(n) || !/\d/.test(n)) { alert('Use at least 8 characters with letters and numbers.'); return false; }
+      if (n !== val('p_con')) { alert('Passwords do not match.'); return false; }
+      m.pw = n; saveSettings(m); log('Changed own password', 'Authentication', 'Users', acct.username, 'UPDATE'); alert('Password updated.'); return false;
+    } else if (a === 'savenotif') {
+      const m = settings(); document.querySelectorAll('.nt').forEach((c) => { m.notif[c.value] = c.checked; }); saveSettings(m); alert('Saved.'); return false;
+    } else return false;
+    return true;
+  }
+
+  /* =====================================================
+     LOGIN HOOKS
+  ===================================================== */
+  const find = (id) => { const a = window.SIMSAccounts && SIMSAccounts.find(id); return a && a.role === 'REGISTRAR' ? a : null; };
+
+  function authenticate(username, password) {
+    const a = find(username);
+    if (!a) return { ok: false, message: 'Account not found.' };
+    const pw = (rd(K.me + ':' + a.username, {}) || {}).pw || a.password;
+    if (password !== pw) return { ok: false, message: 'Incorrect password.' };
+    return { ok: true, account: a };
+  }
+
+  function bind(root) {
+    if (root.dataset.bound) return;
+    root.dataset.bound = 1;
+    root.addEventListener('click', (e) => {
+      const t = e.target.closest('[data-go],[data-sel],[data-cor],[data-app],[data-doc],[data-rel],[data-gr],[data-x]');
+      if (!t || !root.contains(t)) return;
+      e.preventDefault(); act(t);
+    });
+  }
+
+  function open(account) {
+    acct = account; page = 'home'; sel = null; fl = { q: '', st: '' }; tab = 'Overview'; rtab = 'Student Records'; mtab = 'Applications';
+    const root = $('#registrarView'); root.classList.remove('hidden'); bind(root);
+    log('Successful login', 'Authentication', 'Users', acct.username, 'LOGIN');
+    render();
+  }
+
+  function close() {
+    if (!acct) return;
+    log('Signed out', 'Authentication', 'Users', acct.username, 'LOGOUT');
+    acct = null;
+    const root = $('#registrarView'); root.classList.add('hidden'); root.innerHTML = '';
+    const form = $('#loginForm'); if (form) form.reset();
+    const lv = $('#loginView'); if (lv) lv.classList.remove('hidden');
+  }
+
+  window.SIMSRegistrar = { isRegistrar: (u) => Boolean(find(u)), authenticate, open, close };
+})();

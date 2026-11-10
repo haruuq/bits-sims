@@ -1,8 +1,8 @@
 /* Registrar portal - matches BITS-SIMS Admin Dashboard mockups; reuses style.css shell (top-nav, sidebar) */
-#adminView{min-height:100vh;display:flex;flex-direction:column;background:var(--page-bg)}
-#adminView .app-layout{flex:1}
-#adminView .dashboard-main{background:#d6e0ea}
-#adminView .dashboard-panel.ad-body{display:block;padding:1.5rem 1.5rem 1.75rem;color:#2c3e50}
+#registrarView{min-height:100vh;display:flex;flex-direction:column;background:var(--page-bg)}
+#registrarView .app-layout{flex:1}
+#registrarView .dashboard-main{background:#d6e0ea}
+#registrarView .dashboard-panel.ad-body{display:block;padding:1.5rem 1.5rem 1.75rem;color:#2c3e50}
 .ad-ra{width:48px;height:48px;border-radius:50%;background:#e8e8e8;color:var(--blue);font-weight:800;display:flex;align-items:center;justify-content:center}
 .ad-ra.big{width:124px;height:124px;font-size:2.4rem;box-shadow:0 4px 8px rgba(0,0,0,.15)}
 .ad-body h1{font-size:2rem;font-weight:800;color:#17305e;margin:0 0 .2rem}
