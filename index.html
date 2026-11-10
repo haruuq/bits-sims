@@ -30,7 +30,10 @@
       </header>
 
       <section class="form-section" aria-labelledby="formHeading">
+        <div id="loginPanel">
         <h2 id="formHeading" class="form-title">Enter your credentials</h2>
+
+        <p id="loginNotice" class="login-notice" role="status" hidden></p>
 
         <form id="loginForm" novalidate>
           <div class="input-group">
@@ -51,7 +54,7 @@
         </form>
 
         <nav class="forgot-link" aria-label="Account Recovery">
-          <a href="#">Forgotten your username or email?</a>
+          <a href="#" id="forgotLink">Forgot your password?</a>
         </nav>
 
         <!-- Prototype only: the hardcoded logins from accounts.js. Delete with accounts.js. -->
@@ -60,6 +63,47 @@
           <p>Pick a role to fill in its login.</p>
           <ul id="demoAccounts"></ul>
         </details>
+        </div>
+
+        <!-- Forgot password (auth.js). Step 1: ask for a code. Step 2: code + new password. -->
+        <div id="resetPanel" hidden>
+          <h2 class="form-title">Reset your password</h2>
+
+          <form id="resetRequestForm" novalidate>
+            <p class="reset-note">Enter your username, work email or student number. A 6-digit code will be sent to the email registered to the account.</p>
+            <div class="input-group">
+              <label for="resetId">Username, email or student number</label>
+              <input type="text" id="resetId" autocomplete="username" placeholder="e.g. dawson.garcia" />
+            </div>
+            <p id="resetRequestError" class="login-error" role="alert" hidden></p>
+            <button type="submit" class="submit-btn">Send reset code</button>
+          </form>
+
+          <form id="resetCompleteForm" novalidate hidden>
+            <p id="resetSentMsg" class="reset-note" role="status"></p>
+            <!-- Prototype only: stands in for the user's email inbox until an email server is connected -->
+            <div id="resetDemoInbox" class="reset-inbox" hidden></div>
+            <div class="input-group">
+              <label for="resetCode">6-digit code</label>
+              <input type="text" id="resetCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" />
+            </div>
+            <div class="input-group">
+              <label for="resetPw">New password</label>
+              <input type="password" id="resetPw" autocomplete="new-password" placeholder="At least 8 characters, letters and numbers" />
+            </div>
+            <div class="input-group">
+              <label for="resetConfirm">Confirm new password</label>
+              <input type="password" id="resetConfirm" autocomplete="new-password" />
+            </div>
+            <p id="resetError" class="login-error" role="alert" hidden></p>
+            <button type="submit" class="submit-btn">Set new password</button>
+            <p class="reset-alt"><a href="#" id="resetResend">Didn't get it? Send a new code</a></p>
+          </form>
+
+          <nav class="forgot-link" aria-label="Back to log in">
+            <a href="#" id="resetBack">Back to log in</a>
+          </nav>
+        </div>
       </section>
 
     </div>
@@ -1159,6 +1203,7 @@
 
   <!-- Scripts: staff.js must load BEFORE script.js, and script.js only once -->
   <script src="accounts.js"></script>
+  <script src="auth.js"></script>
   <script src="registry.js"></script>
   <script src="data.js"></script>
   <script src="staff.js"></script>

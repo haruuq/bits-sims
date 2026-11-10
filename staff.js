@@ -324,7 +324,7 @@
     if (rec && (rec.status === 'Suspended' || rec.status === 'Inactive')) return { ok: false, message: `This account is ${rec.status.toLowerCase()}. Please contact ICT Services.` };
     if (lock.until && Date.now() < lock.until) {
       const mins = Math.ceil((lock.until - Date.now()) / 60000);
-      return { ok: false, message: `Too many failed attempts. This account is locked for about ${mins} more minute(s).` };
+      return { ok: false, message: `Too many failed attempts. This account is locked for about ${mins} more minute(s). You can also reset your password.` };
     }
 
     const current = db.pw[acc.username] || acc.pwHash;
@@ -338,13 +338,25 @@
       if (rec) { rec.failed = lock.fails || db.policy.maxFailed; save('users'); }
       db.locks[acc.username] = lock; save('locks');
       me = acc; audit('Authentication', 'Users', 'U-' + (rec ? rec.id : '?'), 'LOGIN', 'Failed login (wrong password)', 'Failed'); me = null;
-      const left = Math.max(0, db.policy.maxFailed - lock.fails);
-      return { ok: false, message: lock.until ? `Too many failed attempts. The account is locked for ${db.policy.lockMin} minutes.` : `Incorrect password. ${left} attempt(s) left before the account locks.` };
+      // Generic message: don't reveal whether the username exists (same as auth.js)
+      return { ok: false, message: lock.until ? `Too many failed attempts. The account is locked for ${db.policy.lockMin} minutes. You can also reset your password.` : 'Incorrect username or password.' };
     }
 
     db.locks[acc.username] = { fails: 0, until: 0 }; save('locks');
     if (rec) { rec.failed = 0; rec.lockoutUntil = ''; rec.lastLogin = nowStamp(); if (rec.status === 'Locked') rec.status = 'Active'; save('users'); }
     return { ok: true, account: acc };
+  }
+
+  // Forgot-password reset (called by auth.js once the one-time code checks out).
+  // Sets the new password and lifts a lockout; suspended accounts stay suspended.
+  function setPassword(username, pw) {
+    const acc = findAccount(username);
+    if (!acc) return false;
+    db.pw[acc.username] = hash(pw); save('pw');
+    db.locks[acc.username] = { fails: 0, until: 0 }; save('locks');
+    const rec = db.users.find((u) => u.username === acc.username);
+    if (rec) { rec.failed = 0; rec.lockoutUntil = ''; rec.mustChange = false; if (rec.status === 'Locked') rec.status = 'Active'; save('users'); }
+    return true;
   }
 
   /* =====================================================
@@ -1477,7 +1489,7 @@
 
   // Read/write hooks used by registrar.js so the portals share one set of records
   window.SIMSStaff = {
-    isStaffUser, authenticate, open, close,
+    isStaffUser, authenticate, open, close, setPassword,
     classes: () => db.classes,
     userName,
     gradeSheets: gradeSheetsList,
