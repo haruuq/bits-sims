@@ -50,6 +50,14 @@
     fac: 'bits-sims-staff-faculty', policy: 'bits-sims-staff-policy', alerts: 'bits-sims-staff-alertcfg',
     reports: 'bits-sims-staff-reports', pw: 'bits-sims-staff-pw', locks: 'bits-sims-staff-locks'
   };
+  // Bump when the seed data changes so everyone's old browser data resets
+  const STAFF_VERSION = 2;
+  try {
+    if (localStorage.getItem('bits-sims-staff-version') !== String(STAFF_VERSION)) {
+      Object.values(K).forEach((k) => localStorage.removeItem(k));
+      localStorage.setItem('bits-sims-staff-version', String(STAFF_VERSION));
+    }
+  } catch (e) { /* storage unavailable */ }
   const load = (key, seed) => {
     try { const v = JSON.parse(localStorage.getItem(key)); if (v !== null && v !== undefined) return v; } catch (e) { /* ignore */ }
     return seed();
@@ -76,7 +84,8 @@
   // What each portal can do (the access matrix in the planning reference, section 8.2)
   const CAPS = {
     ICT_ADMIN: ['accounts.manage', 'roles.manage', 'audit.full', 'backup.manage', 'monitor.manage', 'reports.all', 'config'],
-    EDTECH: ['accounts.support', 'roles.view', 'audit.view', 'backup.view', 'monitor.manage', 'classes.edit', 'reports.ops'],
+    // EdTech only gets pages where it can act; view-only pages (roles, audit, backups) were removed
+    EDTECH: ['accounts.support', 'monitor.manage', 'classes.edit', 'reports.ops'],
     DEPT_HEAD: ['classes.edit', 'classes.create', 'grades.review', 'attendance.view', 'students.view', 'reports.dept'],
     FACULTY: ['classes.assigned', 'attendance.encode', 'grades.encode', 'reports.class']
   };
@@ -89,8 +98,7 @@
     ],
     EDTECH: [
       ['dashboard', 'Dashboard', 'home'], ['accounts', 'Account Support', 'users'], ['classes', 'Classes & Schedules', 'cal'],
-      ['monitoring', 'System Monitoring', 'pulse'], ['roles', 'Roles (view only)', 'shield'], ['audit', 'Audit Trails', 'list'],
-      ['backups', 'Backup Status', 'db'], ['reports', 'Reports', 'doc'], ['account', 'My Account', 'user']
+      ['monitoring', 'System Monitoring', 'pulse'], ['reports', 'Reports', 'doc'], ['account', 'My Account', 'user']
     ],
     DEPT_HEAD: [
       ['dashboard', 'Dashboard', 'home'], ['classes', 'Classes & Faculty', 'cal'], ['review', 'Grade Review', 'star'],
@@ -134,7 +142,7 @@
   const ROLE_ORDER = ['ICT_ADMIN', 'EDTECH', 'DEPT_HEAD', 'FACULTY', 'REGISTRAR', 'STUDENT'];
   const seedPerms = () => ({
     ICT_ADMIN: ['USER_MANAGE', 'ROLE_MANAGE', 'AUDIT_VIEW', 'BACKUP_MANAGE', 'SYSTEM_CONFIGURE', 'REPORT_GENERATE', 'REPORT_EXPORT'],
-    EDTECH: ['AUDIT_VIEW', 'REPORT_GENERATE', 'ENROLLMENT_VIEW'],
+    EDTECH: ['REPORT_GENERATE', 'ENROLLMENT_VIEW'],
     DEPT_HEAD: ['STUDENT_VIEW', 'ENROLLMENT_VIEW', 'ENROLLMENT_EDIT', 'ATTENDANCE_VIEW', 'GRADE_VIEW', 'GRADE_APPROVE', 'REPORT_GENERATE', 'REPORT_EXPORT'],
     FACULTY: ['ENROLLMENT_VIEW', 'ATTENDANCE_VIEW', 'ATTENDANCE_ENCODE', 'ATTENDANCE_EDIT', 'GRADE_VIEW', 'GRADE_ENCODE', 'GRADE_EDIT', 'REPORT_GENERATE'],
     REGISTRAR: ['STUDENT_VIEW', 'STUDENT_CREATE', 'STUDENT_EDIT', 'STUDENT_DEACTIVATE', 'STUDENT_APPROVE', 'ENROLLMENT_VIEW', 'ENROLLMENT_CREATE', 'ENROLLMENT_EDIT', 'ENROLLMENT_APPROVE', 'ATTENDANCE_VIEW', 'GRADE_VIEW', 'GRADE_APPROVE', 'GRADE_POST', 'REPORT_GENERATE', 'REPORT_EXPORT'],
@@ -169,7 +177,7 @@
       a('2026-11-05 11:31', 'faculty.lim', 'Authentication', 'Users', 'U-7', 'LOGIN', 'Failed login (wrong password) x5 - account locked', 'Failed', '10.10.3.77'),
       a('2026-11-04 15:20', 'ict.admin', 'User Accounts', 'Users', 'U-9', 'UPDATE', 'Suspended account registrar.dizon', 'Success', '10.10.1.5', 'status: Active', 'status: Suspended'),
       a('2026-11-03 10:11', 'edtech.staff', 'Scheduling', 'ClassSchedules', 'CO-4', 'UPDATE', 'Changed room for GEN-RP 3B', 'Success', '10.10.2.17', 'room: RM-101', 'room: RM-204'),
-      a('2026-11-02 09:45', 'dept.cruz', 'Grades', 'StudentGrades', 'ITP4101', 'APPROVE', 'Approved Prelim grades', 'Success', '10.10.5.3'),
+      a('2026-11-02 09:45', 'dept.cruz', 'Grades', 'StudentGrades', 'GEN-RP', 'APPROVE', 'Approved Final grades', 'Success', '10.10.5.3'),
       a('2026-10-30 13:09', 'ict.admin', 'Roles', 'RolePermissions', 'FACULTY', 'UPDATE', 'Granted REPORT_GENERATE to FACULTY', 'Success', '10.10.1.5', '', 'REPORT_GENERATE')
     ];
     list.forEach((e, i) => { e.id = list.length - i; });
@@ -196,14 +204,15 @@
     { id: 'EV-0100', ts: '2026-11-03 08:15', type: 'Performance Alert', module: 'Enrollment', desc: 'Peak enrollment load: 1,040 concurrent sessions.', severity: 'Information', status: 'Resolved', by: 'ict.admin', resolved: '2026-11-03 10:00' }
   ];
 
+  // Scope for now: 3rd year only, all classes face-to-face
+  const YEAR_LEVEL = '3rd Year';
+  const MODALITY = 'Face-to-Face';
   const ROOMS = ['ITLAB-01', 'ITLAB-02', 'ITLAB-03', 'RM-101', 'RM-204', 'RM-305'];
   const seedClasses = () => [
     { id: 'CO-1', code: 'ITP3112R', title: 'System Administration and Maintenance 1', section: '3B', year: '3rd Year', faculty: 'faculty.reyes', day: 'Monday', start: '08:00', end: '11:00', room: 'ITLAB-01', modality: 'Face-to-Face', type: 'Combined', capacity: 40, size: 8, status: 'Open' },
     { id: 'CO-2', code: 'ITP3111R', title: 'Network Management 2', section: '3B', year: '3rd Year', faculty: 'faculty.reyes', day: 'Tuesday', start: '13:00', end: '16:00', room: 'ITLAB-02', modality: 'Face-to-Face', type: 'Combined', capacity: 40, size: 8, status: 'Open' },
-    { id: 'CO-3', code: 'ITA312R', title: 'Platform Technologies 3 (Cloud Computing)', section: '3B', year: '3rd Year', faculty: 'faculty.reyes', day: 'Wednesday', start: '09:00', end: '12:00', room: 'ITLAB-01', modality: 'Hybrid', type: 'Combined', capacity: 40, size: 8, status: 'Open' },
-    { id: 'CO-4', code: 'GEN-RP', title: 'Readings in Philippine History', section: '3B', year: '3rd Year', faculty: 'faculty.tan', day: 'Friday', start: '10:00', end: '12:00', room: 'RM-204', modality: 'Face-to-Face', type: 'Lecture', capacity: 45, size: 41, status: 'Open' },
-    { id: 'CO-5', code: 'ITP2101', title: 'Data Structures and Algorithms', section: '2A', year: '2nd Year', faculty: 'faculty.tan', day: 'Monday', start: '13:00', end: '16:00', room: 'RM-305', modality: 'Face-to-Face', type: 'Combined', capacity: 40, size: 38, status: 'Open' },
-    { id: 'CO-6', code: 'ITP4101', title: 'Capstone Project 1', section: '4A', year: '4th Year', faculty: 'faculty.lim', day: 'Thursday', start: '09:00', end: '12:00', room: 'ITLAB-03', modality: 'Hybrid', type: 'Laboratory', capacity: 30, size: 30, status: 'Full' }
+    { id: 'CO-3', code: 'ITA312R', title: 'Platform Technologies 3 (Cloud Computing)', section: '3B', year: '3rd Year', faculty: 'faculty.reyes', day: 'Wednesday', start: '09:00', end: '12:00', room: 'ITLAB-01', modality: 'Face-to-Face', type: 'Combined', capacity: 40, size: 8, status: 'Open' },
+    { id: 'CO-4', code: 'GEN-RP', title: 'Readings in Philippine History', section: '3B', year: '3rd Year', faculty: 'faculty.tan', day: 'Friday', start: '10:00', end: '12:00', room: 'RM-204', modality: 'Face-to-Face', type: 'Lecture', capacity: 45, size: 41, status: 'Open' }
   ];
 
   const ROSTER = [
@@ -212,7 +221,7 @@
     { sn: '2024-10902', name: 'Kyle Andrei Navarro' }, { sn: '2024-11019', name: 'Marianne Joy Santiago' },
     { sn: '2024-11248', name: 'Paolo Enrico Villanueva' }, { sn: '2024-11373', name: 'Trisha Anne Mercado' }
   ];
-  const PERIODS = ['Prelim', 'Midterm', 'Final'];
+  const PERIODS = ['Final'];   // Finals only for now (add 'Midterm' back here if needed)
   const DAY_IDX = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
 
   // Grading scale (matches the student portal: 1.00 highest, 3.00 passing, 5.00 failed)
@@ -242,19 +251,19 @@
         });
         fac.attendance[c.id][date] = { status: 'Submitted', rows, recordedAt: date + ' 17:00' };
       });
-      [['Quiz 1', 'Quiz', 20, 20], ['Quiz 2', 'Quiz', 30, 20], ['Prelim Examination', 'Examination', 50, 60]].forEach(([name, type, max, weight], i) => {
+      [['Quiz 1', 'Quiz', 20, 20], ['Quiz 2', 'Quiz', 30, 20], ['Final Examination', 'Examination', 50, 60]].forEach(([name, type, max, weight], i) => {
         const id = `A-${c.id}-${i + 1}`;
-        fac.assessments.push({ id, classId: c.id, period: 'Prelim', name, type, max, weight, date: '2026-09-' + pad(10 + i * 6) });
+        fac.assessments.push({ id, classId: c.id, period: 'Final', name, type, max, weight, date: '2026-11-' + pad(2 + i * 2) });
         fac.scores[id] = {};
         ROSTER.forEach((s, si) => { fac.scores[id][s.sn] = Math.round(max * (0.7 + rnd(ci * 50 + i * 9 + si + 3) * 0.28)); });
       });
-      fac.gradeStatus[`${c.id}|Prelim`] = ci === 0 ? 'Submitted' : 'Draft';
+      fac.gradeStatus[`${c.id}|Final`] = ci === 0 ? 'Submitted' : 'Draft';
     });
     return fac;
   }
 
   const seedPolicy = () => ({ maxFailed: 5, lockMin: 15, minPw: 8, timeoutMin: 20 });
-  const seedAlertCfg = () => ({ maxAbsences: 3, tardiness: 3, notifyGuardian: true, notifyFaculty: true, notifyRegistrar: false, enabled: true });
+  const seedAlertCfg = () => ({ maxAbsences: 3, tardiness: 3, notifyFaculty: true, notifyRegistrar: false, enabled: true });
 
   /* =====================================================
      STATE
@@ -282,9 +291,9 @@
     acct: { q: '', status: 'all', role: 'all' },
     audit: { q: '', mod: 'all', status: 'all' },
     att: { cls: '', date: '', draft: null, key: '' },
-    gr: { cls: '', period: 'Prelim' },
+    gr: { cls: '', period: 'Final' },
     stu: { q: '', status: 'all' },
-    rep: { id: '', cls: '', date: '', period: 'Prelim', from: '', to: '', result: null }
+    rep: { id: '', cls: '', date: '', period: 'Final', from: '', to: '', result: null }
   };
 
   const can = (cap) => me && CAPS[me.role].includes(cap);
@@ -542,19 +551,19 @@
         </div>`;
     }
     if (me.role === 'EDTECH') {
-      const last = db.backups.history[0];
+      const help = u.filter((x) => ['Locked', 'Pending Activation'].includes(x.status) && x.role !== 'ICT_ADMIN');
       return `${head(`Welcome back, ${me.name.split(' ')[0]}`, 'Education technology operations: schedules, class assignments and platform health.')}
         <div class="staff-stats">
           ${stat('PLATFORM HEALTH', healthSummary(), 'From live monitoring')}
           ${stat('OPEN SYSTEM EVENTS', db.events.filter((e) => e.status !== 'Resolved').length, 'Awaiting resolution')}
           ${stat('CLASS OFFERINGS', db.classes.length, `${totalConflicts()} schedule conflict(s)`)}
-          ${stat('LATEST BACKUP', last.status, `${last.id} \u00B7 ${fmtDate(last.start)}`, 'is-blue')}
+          ${stat('ACCOUNTS NEEDING HELP', help.length, 'Locked or pending activation', 'is-blue')}
         </div>
         <div class="staff-split">
           ${card('Open system events', table(['Event', 'Module', 'Severity', 'Status'], db.events.filter((e) => e.status !== 'Resolved').map((e) => `<tr><td>${esc(e.desc)}</td><td>${esc(e.module)}</td><td>${badge(e.severity)}</td><td>${badge(e.status)}</td></tr>`), 'No open events.'))}
           <div class="staff-stack">
             ${card('Quick actions', `<div class="staff-quick"><button type="button" class="btn-solid" data-nav="classes">Manage schedules</button><button type="button" class="btn-light" data-nav="monitoring">Monitoring</button><button type="button" class="btn-light" data-nav="accounts">Account support</button></div>`)}
-            ${card('Recent activity', recentAudit(5, false))}
+            ${card('Accounts needing help', help.length ? `<ul class="staff-list">${help.map((x) => `<li><div><strong>${esc(x.name)}</strong><small>${esc(x.username)} \u00B7 ${esc(ROLE_LABEL[x.role])}</small></div>${badge(x.status)}</li>`).join('')}</ul>` : '<p class="dm-modal-note">No locked or pending accounts.</p>')}
           </div>
         </div>`;
     }
@@ -788,7 +797,7 @@
       return `${head('My Classes', 'You can only see classes assigned to you.')}
         <div class="staff-cards">${cls.map((c) => card('', `<div class="staff-class"><span class="dm-stat-label">${esc(c.code)} \u00B7 SECTION ${esc(c.section)}</span><h3>${esc(c.title)}</h3>
           <dl class="set-info"><div><dt>Schedule</dt><dd>${esc(schedText(c))}</dd></div><div><dt>Room</dt><dd>${esc(c.room)}</dd></div><div><dt>Mode</dt><dd>${esc(c.modality)}</dd></div><div><dt>Enrolled</dt><dd>${c.size} / ${c.capacity}</dd></div></dl>
-          <div class="staff-quick"><button type="button" class="btn-solid btn-sm" data-act="cls-roster" data-id="${c.id}">Class list</button><button type="button" class="btn-light btn-sm" data-act="att-open" data-id="${c.id}">Attendance</button><button type="button" class="btn-light btn-sm" data-act="gr-open" data-id="${c.id}" data-period="Prelim">Grades</button></div></div>`)).join('')}</div>`;
+          <div class="staff-quick"><button type="button" class="btn-solid btn-sm" data-act="cls-roster" data-id="${c.id}">Class list</button><button type="button" class="btn-light btn-sm" data-act="att-open" data-id="${c.id}">Attendance</button><button type="button" class="btn-light btn-sm" data-act="gr-open" data-id="${c.id}" data-period="Final">Grades</button></div></div>`)).join('')}</div>`;
     }
     const conflicts = totalConflicts();
     const isDH = me.role === 'DEPT_HEAD';
@@ -804,13 +813,12 @@
         ${field('cfFac', 'Assigned faculty', `<select id="cfFac" class="dm-select">${opts(faculty.map((u) => [u.username, u.name]), c.faculty)}</select>`)}
         ${field('cfRoom', 'Room', `<select id="cfRoom" class="dm-select">${opts(ROOMS.map((r) => [r, r]), c.room)}</select>`)}
         ${field('cfDay', 'Day', `<select id="cfDay" class="dm-select">${opts(Object.keys(DAY_IDX).map((d) => [d, d]), c.day)}</select>`)}
-        ${field('cfMode', 'Modality', `<select id="cfMode" class="dm-select">${opts(['Face-to-Face', 'Online', 'Hybrid'].map((d) => [d, d]), c.modality)}</select>`)}
         ${field('cfStart', 'Start time', `<input id="cfStart" type="time" value="${c.start}" />`)}
         ${field('cfEnd', 'End time', `<input id="cfEnd" type="time" value="${c.end}" />`)}
       </div></form>`;
   }
   function saveClass(c) {
-    const next = Object.assign({}, c, { faculty: $('#cfFac').value, room: $('#cfRoom').value, day: $('#cfDay').value, modality: $('#cfMode').value, start: $('#cfStart').value, end: $('#cfEnd').value });
+    const next = Object.assign({}, c, { faculty: $('#cfFac').value, room: $('#cfRoom').value, day: $('#cfDay').value, modality: MODALITY, start: $('#cfStart').value, end: $('#cfEnd').value });
     setErr('cfEnd', '');
     if (!next.start || !next.end || toMin(next.end) <= toMin(next.start)) { setErr('cfEnd', 'End time must be after the start time.'); return false; }
     const conflicts = findConflicts(next);
@@ -900,7 +908,7 @@
       Object.values(db.fac.attendance[c.id] || {}).forEach((sess) => { if (sess.status !== 'Submitted') return; const r = sess.rows[s.sn]; if (!r) return; if (r.status === 'Absent') abs++; if (r.status === 'Late') late++; });
       [['Absence', abs, cfg.maxAbsences, `${abs} absences in ${c.code} ${c.section}`], ['Tardiness', late, cfg.tardiness, `${late} late arrivals in ${c.code} ${c.section}`]].forEach(([type, n, limit, msg]) => {
         if (n >= limit && !db.fac.alerts.some((a) => a.sn === s.sn && a.cls === c.id && a.type === type && a.count === n)) {
-          db.fac.alerts.unshift({ sn: s.sn, student: s.name, cls: c.id, type, count: n, message: msg + (cfg.notifyGuardian ? ' \u2014 guardian notice queued' : ''), date: isoDate(new Date()) }); added++;
+          db.fac.alerts.unshift({ sn: s.sn, student: s.name, cls: c.id, type, count: n, message: msg, date: isoDate(new Date()) }); added++;
         }
       });
     });
@@ -1177,11 +1185,9 @@
         ${field('ncCode', 'Course code', '<input id="ncCode" placeholder="e.g. ITP3113R" />')}
         ${field('ncTitle', 'Course title', '<input id="ncTitle" />')}
         ${field('ncSection', 'Section', '<input id="ncSection" placeholder="e.g. 3B" />')}
-        ${field('ncYear', 'Year level', `<select id="ncYear" class="dm-select">${opts(['1st Year', '2nd Year', '3rd Year', '4th Year'].map((y) => [y, y]), '3rd Year')}</select>`)}
         ${field('ncFac', 'Assigned faculty', `<select id="ncFac" class="dm-select">${opts(faculty.map((u) => [u.username, u.name]), '')}</select>`)}
         ${field('ncRoom', 'Room', `<select id="ncRoom" class="dm-select">${opts(ROOMS.map((r) => [r, r]), '')}</select>`)}
         ${field('ncDay', 'Day', `<select id="ncDay" class="dm-select">${opts(Object.keys(DAY_IDX).map((d) => [d, d]), 'Monday')}</select>`)}
-        ${field('ncMode', 'Modality', `<select id="ncMode" class="dm-select">${opts(['Face-to-Face', 'Online', 'Hybrid'].map((d) => [d, d]), 'Face-to-Face')}</select>`)}
         ${field('ncStart', 'Start time', '<input id="ncStart" type="time" />')}
         ${field('ncEnd', 'End time', '<input id="ncEnd" type="time" />')}
         ${field('ncCap', 'Class capacity', '<input id="ncCap" type="number" min="1" max="200" value="40" />')}
@@ -1198,8 +1204,8 @@
     if (!v.start || !v.end || toMin(v.end) <= toMin(v.start)) { setErr('ncEnd', 'Set a start time, and an end time after it.'); ok = false; }
     if (v.code && v.section && db.classes.some((c) => c.code === v.code && c.section === v.section)) { setErr('ncSection', `${v.code} section ${v.section} already exists.`); ok = false; }
     if (!ok) return false;
-    const next = { id: 'CO-' + (db.classes.reduce((n, c) => Math.max(n, parseInt(c.id.split('-')[1], 10) || 0), 0) + 1), code: v.code, title: v.title, section: v.section, year: $('#ncYear').value, faculty: $('#ncFac').value,
-      day: $('#ncDay').value, start: v.start, end: v.end, room: $('#ncRoom').value, modality: $('#ncMode').value, type: 'Lecture', capacity: v.cap, size: 0, status: 'Open' };
+    const next = { id: 'CO-' + (db.classes.reduce((n, c) => Math.max(n, parseInt(c.id.split('-')[1], 10) || 0), 0) + 1), code: v.code, title: v.title, section: v.section, year: YEAR_LEVEL, faculty: $('#ncFac').value,
+      day: $('#ncDay').value, start: v.start, end: v.end, room: $('#ncRoom').value, modality: MODALITY, type: 'Lecture', capacity: v.cap, size: 0, status: 'Open' };
     const conflicts = findConflicts(next);
     if (conflicts.length) { setErr('ncEnd', conflicts[0]); return false; }
     db.classes.push(next); save('classes');
@@ -1229,7 +1235,6 @@
             ${field('alAbs', 'Absences before an alert', `<input id="alAbs" type="number" min="1" max="20" value="${a.maxAbsences}" />`)}
             ${field('alLate', 'Late arrivals before an alert', `<input id="alLate" type="number" min="1" max="20" value="${a.tardiness}" />`)}
           </div>
-          <label class="check-row staff-check"><input type="checkbox" id="alG" ${a.notifyGuardian ? 'checked' : ''}/><span>Notify guardian</span></label>
           <label class="check-row staff-check"><input type="checkbox" id="alF" ${a.notifyFaculty ? 'checked' : ''}/><span>Notify faculty</span></label>
           <label class="check-row staff-check"><input type="checkbox" id="alR" ${a.notifyRegistrar ? 'checked' : ''}/><span>Notify Registrar</span></label>
           <label class="check-row staff-check"><input type="checkbox" id="alOn" ${a.enabled ? 'checked' : ''}/><span>Alert rules enabled</span></label>
@@ -1318,7 +1323,7 @@
         toast(n ? `Attendance submitted. ${n} alert(s) triggered.` : 'Attendance submitted.'); render(); break; }
       case 'att-reopen': { const c = myClasses().find((x) => x.id === ui.att.cls); ask('Reopen attendance?', 'Edits to submitted attendance are recorded in the audit trail.', 'Reopen', () => { attSession(c, ui.att.date).status = 'Open'; persist(K.fac, db.fac); audit('Attendance', 'AttendanceSessions', `${c.code}|${ui.att.date}`, 'UPDATE', 'Reopened submitted attendance for editing'); render(); }); break; }
 
-      case 'gr-open': { ui.gr.cls = id; ui.gr.period = el.dataset.period || 'Prelim'; go('grades'); break; }
+      case 'gr-open': { ui.gr.cls = id; ui.gr.period = el.dataset.period || 'Final'; go('grades'); break; }
       case 'gr-add': openModal({ title: `Add ${ui.gr.period} assessment`, body: assessmentForm(), ok: 'Add assessment', onOk: () => {
         const name = $('#asName').value.trim(), max = Number($('#asMax').value), weight = Number($('#asWeight').value); let ok = true;
         ['asName', 'asMax', 'asWeight'].forEach((i) => setErr(i, ''));
@@ -1419,7 +1424,7 @@
       if (!ok) return;
       db.policy = v; save('policy'); audit('System', 'SystemConfiguration', 'SECURITY', 'UPDATE', 'Updated security policy', 'Success', '', JSON.stringify(v)); toast('Security policy saved.');
     } else if (id === 'alForm' && can('config')) {
-      const v = { maxAbsences: Number($('#alAbs').value), tardiness: Number($('#alLate').value), notifyGuardian: $('#alG').checked, notifyFaculty: $('#alF').checked, notifyRegistrar: $('#alR').checked, enabled: $('#alOn').checked };
+      const v = { maxAbsences: Number($('#alAbs').value), tardiness: Number($('#alLate').value), notifyFaculty: $('#alF').checked, notifyRegistrar: $('#alR').checked, enabled: $('#alOn').checked };
       ['alAbs', 'alLate'].forEach((i) => setErr(i, ''));
       if (!(v.maxAbsences >= 1)) { setErr('alAbs', 'Enter 1 or more.'); return; }
       if (!(v.tardiness >= 1)) { setErr('alLate', 'Enter 1 or more.'); return; }

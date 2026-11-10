@@ -5,6 +5,7 @@
    hangs off (departments, programs, courses, terms, rooms)
    and term enrollments. Design reference sections 2.2-2.7
    and 4.5.
+   Current scope: 3rd year only.
 
    Who touches it:
      Registrar  -> reads and writes (registration, status,
@@ -20,7 +21,7 @@
   'use strict';
 
   const KEY = 'bits-sims-registry';
-  const VERSION = 2;
+  const VERSION = 3;   // bump whenever the seed changes so old browser data resets
 
   const S = (no, name, program, year, status, dept, admission, extra) => Object.assign({
     no, name, program, year, status, dept: dept || 'IT', admission: admission || 'Freshman', email: '', mobile: '', city: ''
@@ -37,10 +38,10 @@
       S('2024-11019', 'Santiago, Marianne Joy', 'BSIT', '3rd', 'Active'),
       S('2024-11248', 'Villanueva, Paolo Enrico', 'BSIT', '3rd', 'Active', 'IT', 'Transferee'),
       S('2024-11373', 'Mercado, Trisha Anne', 'BSIT', '3rd', 'Active'),
-      S('2025-0042', 'Reyes, Pedro', 'BSCS', '4th', 'On Leave'),
-      S('2026-0001', 'Santos, Maria', 'BSIT', '1st', 'Active'),
-      S('2026-0002', 'Garcia, Ana', 'BSCS', '1st', 'Active'),
-      S('2025-0412', 'Lopez, Carmen', 'BSBA', '2nd', 'Active', 'BA')
+      S('2024-10655', 'Reyes, Pedro', 'BSCS', '3rd', 'On Leave'),
+      S('2024-11502', 'Santos, Maria', 'BSIT', '3rd', 'Active', 'IT', 'Returnee'),
+      S('2024-11610', 'Garcia, Ana', 'BSCS', '3rd', 'Active'),
+      S('2024-11734', 'Lopez, Carmen', 'BSBA', '3rd', 'Active', 'BA')
     ],
     setup: {
       Departments: [['IT', 'Information Technology', 'Cruz, R.', 'Active'], ['BA', 'Business Administration', 'Cruz, A.', 'Active'], ['ED', 'Education', 'Santos, L.', 'Inactive']],
@@ -51,9 +52,9 @@
     },
     // Term enrollments (StudentEnrollments, 4.5): Pending -> Verified -> Enrolled
     enrollments: [
-      { ref: 'ENR-0007', student: 'Santos, Maria', no: '2026-0001', term: '1st Sem 2026-27', program: 'BSIT', year: '1st', units: '21.0', status: 'Pending' },
-      { ref: 'ENR-0012', student: 'Reyes, Pedro', no: '2025-0042', term: '1st Sem 2026-27', program: 'BSCS', year: '4th', units: '18.0', status: 'Verified' },
-      { ref: 'ENR-0019', student: 'Garcia, Ana', no: '2026-0002', term: '1st Sem 2026-27', program: 'BSCS', year: '1st', units: '24.0', status: 'Enrolled' }
+      { ref: 'ENR-0007', student: 'Santos, Maria', no: '2024-11502', term: '1st Sem 2026-27', program: 'BSIT', year: '3rd', units: '21.0', status: 'Pending' },
+      { ref: 'ENR-0012', student: 'Reyes, Pedro', no: '2024-10655', term: '1st Sem 2026-27', program: 'BSCS', year: '3rd', units: '18.0', status: 'Verified' },
+      { ref: 'ENR-0019', student: 'Garcia, Ana', no: '2024-11610', term: '1st Sem 2026-27', program: 'BSCS', year: '3rd', units: '24.0', status: 'Enrolled' }
     ]
   });
 
