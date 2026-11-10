@@ -17,19 +17,21 @@
    - Grade scale, passing grade, standing and attendance
      rules live in `rules` instead of in the page code (5.13, 10.1).
    - Grading periods are a list, not fixed columns (5.12 note).
-     SBCA uses Midterm and Finals.
+     Current scope: Finals only, so the list is empty and the
+     final grade is the only grade. To bring Midterm back, add
+     { key: 'midterm', label: 'Midterm' } to rules.gradingPeriods.
    - Attendance counts present / absent / late / excused (6.5).
    - GWA, units and attendance % are computed, never stored (10.1).
 
    Handy in the browser console:
      SIMSData.get()                              -> raw data
-     SIMSData.postGrades('ita312', { midterm: 1.75 }, 'posted')
+     SIMSData.postGrades('ita312', { final: 1.75 }, 'posted')
      SIMSData.addAttendance('itp3111', 'absent')
      SIMSData.reset()                            -> back to the sample
 ===================================================== */
 (function () {
   const STORE_KEY = 'bits-sims-academic';
-  const VERSION = 4;
+  const VERSION = 5;   // bump whenever SAMPLE changes so old browser data resets
 
   /* ---------- Sample data (1 student) ---------- */
   const SAMPLE = {
@@ -37,10 +39,7 @@
 
     // Institution rules (later: GradeScales / GradingPeriods / settings tables)
     rules: {
-      gradingPeriods: [
-        { key: 'midterm', label: 'Midterm' },
-        { key: 'finals', label: 'Finals' }
-      ],
+      gradingPeriods: [],     // Finals only for now: the final grade is the Finals grade
       passingGrade: 3.0,      // 3.00 or better passes (lower is better)
       failedGrade: 5.0,
       deansListMax: 1.75,     // term GWA at or below this = Dean's Lister
@@ -81,37 +80,38 @@
     //                (left out = posted, e.g. finished past terms)
     subjects: [
       // AY 2024-2025, 1st Sem
-      { id: 'itc111', termId: '2425-1', code: 'ITC111', title: 'Introduction to Computing', units: 3, instructor: 'Prof. Summer Noff', grades: { midterm: 2.0, finals: 2.0 }, finalGrade: 2.0, status: 'passed', updated: '2024-12-18' },
-      { id: 'itc112', termId: '2425-1', code: 'ITC112', title: 'Computer Programming 1', units: 3, instructor: 'Prof. Sam Miguel', grades: { midterm: 2.0, finals: 2.0 }, finalGrade: 2.0, status: 'passed', updated: '2024-12-18' },
-      { id: 'gec-pc', termId: '2425-1', code: 'GEC-PC', title: 'Purposive Communication', units: 3, instructor: 'Prof. Anton Nov', grades: { midterm: 1.75, finals: 1.75 }, finalGrade: 1.75, status: 'passed', updated: '2024-12-17' },
-      { id: 'gec-mmw', termId: '2425-1', code: 'GEC-MMW', title: 'Mathematics in the Modern World', units: 3, instructor: 'Prof. Rey D. Horse', grades: { midterm: 1.75, finals: 1.75 }, finalGrade: 1.75, status: 'passed', updated: '2024-12-19' },
-      { id: 'gec-us', termId: '2425-1', code: 'GEC-US', title: 'Understanding the Self', units: 3, instructor: 'Prof. Anton Nov', grades: { midterm: 1.75, finals: 1.75 }, finalGrade: 1.75, status: 'passed', updated: '2024-12-16' },
+      { id: 'itc111', termId: '2425-1', code: 'ITC111', title: 'Introduction to Computing', units: 3, instructor: 'Prof. Summer Noff', finalGrade: 2.0, status: 'passed', updated: '2024-12-18' },
+      { id: 'itc112', termId: '2425-1', code: 'ITC112', title: 'Computer Programming 1', units: 3, instructor: 'Prof. Sam Miguel', finalGrade: 2.0, status: 'passed', updated: '2024-12-18' },
+      { id: 'gec-pc', termId: '2425-1', code: 'GEC-PC', title: 'Purposive Communication', units: 3, instructor: 'Prof. Anton Nov', finalGrade: 1.75, status: 'passed', updated: '2024-12-17' },
+      { id: 'gec-mmw', termId: '2425-1', code: 'GEC-MMW', title: 'Mathematics in the Modern World', units: 3, instructor: 'Prof. Rey D. Horse', finalGrade: 1.75, status: 'passed', updated: '2024-12-19' },
+      { id: 'gec-us', termId: '2425-1', code: 'GEC-US', title: 'Understanding the Self', units: 3, instructor: 'Prof. Anton Nov', finalGrade: 1.75, status: 'passed', updated: '2024-12-16' },
 
       // AY 2024-2025, 2nd Sem
-      { id: 'itc121', termId: '2425-2', code: 'ITC121', title: 'Computer Programming 2', units: 3, instructor: 'Prof. Sam Miguel', grades: { midterm: 2.0, finals: 2.0 }, finalGrade: 2.0, status: 'passed', updated: '2025-05-20' },
-      { id: 'itp122', termId: '2425-2', code: 'ITP122', title: 'Human Computer Interaction 1', units: 3, instructor: 'Prof. Summer Noff', grades: { midterm: 1.75, finals: 1.75 }, finalGrade: 1.75, status: 'passed', updated: '2025-05-21' },
-      { id: 'gec-sts', termId: '2425-2', code: 'GEC-STS', title: 'Science, Technology and Society', units: 3, instructor: 'Prof. Anton Nov', grades: { midterm: 1.75, finals: 1.75 }, finalGrade: 1.75, status: 'passed', updated: '2025-05-19' },
-      { id: 'gec-aa', termId: '2425-2', code: 'GEC-AA', title: 'Art Appreciation', units: 3, instructor: 'Prof. Rey D. Horse', grades: { midterm: 1.75, finals: 1.75 }, finalGrade: 1.75, status: 'passed', updated: '2025-05-19' },
-      { id: 'gec-eth', termId: '2425-2', code: 'GEC-ETH', title: 'Ethics', units: 3, instructor: 'Prof. Anton Nov', grades: { midterm: 1.75, finals: 1.75 }, finalGrade: 1.75, status: 'passed', updated: '2025-05-22' },
+      { id: 'itc121', termId: '2425-2', code: 'ITC121', title: 'Computer Programming 2', units: 3, instructor: 'Prof. Sam Miguel', finalGrade: 2.0, status: 'passed', updated: '2025-05-20' },
+      { id: 'itp122', termId: '2425-2', code: 'ITP122', title: 'Human Computer Interaction 1', units: 3, instructor: 'Prof. Summer Noff', finalGrade: 1.75, status: 'passed', updated: '2025-05-21' },
+      { id: 'gec-sts', termId: '2425-2', code: 'GEC-STS', title: 'Science, Technology and Society', units: 3, instructor: 'Prof. Anton Nov', finalGrade: 1.75, status: 'passed', updated: '2025-05-19' },
+      { id: 'gec-aa', termId: '2425-2', code: 'GEC-AA', title: 'Art Appreciation', units: 3, instructor: 'Prof. Rey D. Horse', finalGrade: 1.75, status: 'passed', updated: '2025-05-19' },
+      { id: 'gec-eth', termId: '2425-2', code: 'GEC-ETH', title: 'Ethics', units: 3, instructor: 'Prof. Anton Nov', finalGrade: 1.75, status: 'passed', updated: '2025-05-22' },
 
       // AY 2025-2026, 1st Sem
-      { id: 'itc211', termId: '2526-1', code: 'ITC211', title: 'Data Structures and Algorithms', units: 3, instructor: 'Prof. Sam Miguel', grades: { midterm: 2.0, finals: 2.0 }, finalGrade: 2.0, status: 'passed', updated: '2025-12-17' },
-      { id: 'itp212', termId: '2526-1', code: 'ITP212', title: 'Object-Oriented Programming', units: 3, instructor: 'Prof. Summer Noff', grades: { midterm: 1.5, finals: 1.5 }, finalGrade: 1.5, status: 'passed', updated: '2025-12-18' },
-      { id: 'itp213', termId: '2526-1', code: 'ITP213', title: 'Information Management 1', units: 3, instructor: 'Prof. Summer Noff', grades: { midterm: 1.75, finals: 1.75 }, finalGrade: 1.75, status: 'passed', updated: '2025-12-18' },
-      { id: 'itp214', termId: '2526-1', code: 'ITP214', title: 'Networking 1', units: 3, instructor: 'Prof. Sam Miguel', grades: { midterm: 1.75, finals: 1.75 }, finalGrade: 1.75, status: 'passed', updated: '2025-12-19' },
+      { id: 'itc211', termId: '2526-1', code: 'ITC211', title: 'Data Structures and Algorithms', units: 3, instructor: 'Prof. Sam Miguel', finalGrade: 2.0, status: 'passed', updated: '2025-12-17' },
+      { id: 'itp212', termId: '2526-1', code: 'ITP212', title: 'Object-Oriented Programming', units: 3, instructor: 'Prof. Summer Noff', finalGrade: 1.5, status: 'passed', updated: '2025-12-18' },
+      { id: 'itp213', termId: '2526-1', code: 'ITP213', title: 'Information Management 1', units: 3, instructor: 'Prof. Summer Noff', finalGrade: 1.75, status: 'passed', updated: '2025-12-18' },
+      { id: 'itp214', termId: '2526-1', code: 'ITP214', title: 'Networking 1', units: 3, instructor: 'Prof. Sam Miguel', finalGrade: 1.75, status: 'passed', updated: '2025-12-19' },
 
       // AY 2025-2026, 2nd Sem (shown on the Report Card)
-      { id: 'itp221', termId: '2526-2', code: 'ITP221', title: 'Web Development Fundamentals', units: 3, instructor: 'Prof. Summer Noff', grades: { midterm: 1.75, finals: 1.75 }, finalGrade: 1.75, status: 'passed', updated: '2026-05-20' },
-      { id: 'itp222', termId: '2526-2', code: 'ITP222', title: 'Database Systems', units: 3, instructor: 'Prof. Summer Noff', grades: { midterm: 1.5, finals: 1.5 }, finalGrade: 1.5, status: 'passed', updated: '2026-05-21' },
-      { id: 'itc223', termId: '2526-2', code: 'ITC223', title: 'Discrete Mathematics', units: 3, instructor: 'Prof. Rey D. Horse', grades: { midterm: 2.0, finals: 2.0 }, finalGrade: 2.0, status: 'passed', updated: '2026-05-21' },
-      { id: 'itp224', termId: '2526-2', code: 'ITP224', title: 'Computer Networks', units: 3, instructor: 'Prof. Sam Miguel', grades: { midterm: 1.75, finals: 1.75 }, finalGrade: 1.75, status: 'passed', updated: '2026-05-22' },
-      { id: 'itp225', termId: '2526-2', code: 'ITP225', title: 'IT Ethics and Professional Practice', units: 3, instructor: 'Prof. Anton Nov', grades: { midterm: 1.75, finals: 1.75 }, finalGrade: 1.75, status: 'passed', updated: '2026-05-19' },
+      { id: 'itp221', termId: '2526-2', code: 'ITP221', title: 'Web Development Fundamentals', units: 3, instructor: 'Prof. Summer Noff', finalGrade: 1.75, status: 'passed', updated: '2026-05-20' },
+      { id: 'itp222', termId: '2526-2', code: 'ITP222', title: 'Database Systems', units: 3, instructor: 'Prof. Summer Noff', finalGrade: 1.5, status: 'passed', updated: '2026-05-21' },
+      { id: 'itc223', termId: '2526-2', code: 'ITC223', title: 'Discrete Mathematics', units: 3, instructor: 'Prof. Rey D. Horse', finalGrade: 2.0, status: 'passed', updated: '2026-05-21' },
+      { id: 'itp224', termId: '2526-2', code: 'ITP224', title: 'Computer Networks', units: 3, instructor: 'Prof. Sam Miguel', finalGrade: 1.75, status: 'passed', updated: '2026-05-22' },
+      { id: 'itp225', termId: '2526-2', code: 'ITP225', title: 'IT Ethics and Professional Practice', units: 3, instructor: 'Prof. Anton Nov', finalGrade: 1.75, status: 'passed', updated: '2026-05-19' },
 
       // AY 2026-2027, 1st Sem (current - matches the dashboard courses)
-      { id: 'itp3112', termId: '2627-1', code: 'ITP3112R', title: 'System Administration and Maintenance 1', units: 3, section: 'BSIT-3B', instructor: 'Prof. Sam Miguel', schedule: 'Mon 1:00-4:00 PM', grades: { midterm: 1.5, finals: null }, gradeStatus: { midterm: 'posted' }, finalGrade: null, status: 'inprogress', updated: '2026-10-28', attendance: { held: 9, absent: 0, late: 1, excused: 0 } },
-      { id: 'gen-rp', termId: '2627-1', code: 'GEN-RP', title: 'Readings in Philippine History', units: 3, section: 'BSIT-3B', instructor: 'Prof. Anton Nov', schedule: 'Tue 9:00 AM-12:00 PM', grades: { midterm: 1.5, finals: null }, gradeStatus: { midterm: 'posted' }, finalGrade: null, status: 'inprogress', updated: '2026-09-15', attendance: { held: 5, absent: 0, late: 0, excused: 0 } },
-      { id: 'itp3111', termId: '2627-1', code: 'ITP3111R', title: 'Network Management 2', units: 3, section: 'BSIT-3B', instructor: 'Prof. Sam Miguel', schedule: 'Wed 1:00-4:00 PM', grades: { midterm: 1.75, finals: null }, gradeStatus: { midterm: 'posted' }, finalGrade: null, status: 'inprogress', updated: '2026-10-29', attendance: { held: 8, absent: 1, late: 1, excused: 0 } },
-      { id: 'ita312', termId: '2627-1', code: 'ITA312R', title: 'Platform Technologies 3 (Cloud Computing)', units: 3, section: 'BSIT-3B', instructor: 'Prof. Summer Noff', schedule: 'Thu 9:00 AM-12:00 PM', grades: { midterm: 1.75, finals: null }, gradeStatus: { midterm: 'submitted' }, finalGrade: null, status: 'inprogress', updated: '2026-10-30', attendance: { held: 7, absent: 0, late: 1, excused: 0 } }
+      // Finals in mixed states: 2 posted, 1 approved and 1 submitted (both waiting for the Registrar)
+      { id: 'itp3112', termId: '2627-1', code: 'ITP3112R', title: 'System Administration and Maintenance 1', units: 3, section: 'BSIT-3B', instructor: 'Prof. Sam Miguel', schedule: 'Mon 1:00-4:00 PM', gradeStatus: { final: 'posted' }, finalGrade: 1.5, status: 'passed', updated: '2026-11-06', attendance: { held: 9, absent: 0, late: 1, excused: 0 } },
+      { id: 'gen-rp', termId: '2627-1', code: 'GEN-RP', title: 'Readings in Philippine History', units: 3, section: 'BSIT-3B', instructor: 'Prof. Anton Nov', schedule: 'Tue 9:00 AM-12:00 PM', gradeStatus: { final: 'posted' }, finalGrade: 1.5, status: 'passed', updated: '2026-11-06', attendance: { held: 5, absent: 0, late: 0, excused: 0 } },
+      { id: 'itp3111', termId: '2627-1', code: 'ITP3111R', title: 'Network Management 2', units: 3, section: 'BSIT-3B', instructor: 'Prof. Sam Miguel', schedule: 'Wed 1:00-4:00 PM', gradeStatus: { final: 'approved' }, finalGrade: 1.75, status: 'passed', updated: '2026-11-06', attendance: { held: 8, absent: 1, late: 1, excused: 0 } },
+      { id: 'ita312', termId: '2627-1', code: 'ITA312R', title: 'Platform Technologies 3 (Cloud Computing)', units: 3, section: 'BSIT-3B', instructor: 'Prof. Summer Noff', schedule: 'Thu 9:00 AM-12:00 PM', gradeStatus: { final: 'submitted' }, finalGrade: 1.75, status: 'passed', updated: '2026-11-06', attendance: { held: 7, absent: 0, late: 1, excused: 0 } }
     ],
 
     // Overall attendance rate of past terms (for the trend chart)
@@ -284,7 +284,7 @@
     },
 
     /* Staff actions (used by the demo tool for now; later the faculty/registrar screens)
-       g = { midterm, finals, final }  ('' or null = not entered, final can be 'INC')
+       g = { final }  ('' or null = not entered, can be 'INC'); period keys too if any are configured
        status = draft | submitted | approved | posted  (applied to every grade passed in) */
     postGrades(subjectId, g, status = 'posted') {
       api.update((d) => {

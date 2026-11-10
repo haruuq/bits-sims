@@ -52,9 +52,7 @@
     <section class="card">
       <h2>Post grades (what a faculty member would do)</h2>
       <div class="row">
-        <label>Midterm <input id="midterm" type="number" step="0.25" min="1" max="5" /></label>
-        <label>Finals <input id="finals" type="number" step="0.25" min="1" max="5" /></label>
-        <label>Final grade
+        <label>Finals grade
           <select id="final">
             <option value="">Not posted</option>
             <option>1.00</option><option>1.25</option><option>1.50</option><option>1.75</option>
@@ -121,10 +119,8 @@
 
     function fillForm() {
       const s = D.raw.subject($('#subject').value);
-      ['midterm', 'finals'].forEach((p) => ($('#' + p).value = s.grades[p] ?? ''));
       const gs = s.gradeStatus || {};
-      $('#gradeNow').textContent = 'Current status: ' + ['midterm', 'finals', 'final']
-        .map((p) => `${p} ${s.grades[p] === null || (p === 'final' && s.finalGrade === null && s.status !== 'inc') ? '(none)' : gs[p] || 'posted'}`).join(' \u00B7 ');
+      $('#gradeNow').textContent = 'Current status: finals ' + (s.finalGrade === null && s.status !== 'inc' ? '(none)' : gs.final || 'posted');
       $('#final').value = s.status === 'inc' ? 'INC' : typeof s.finalGrade === 'number' ? s.finalGrade.toFixed(2) : '';
       $('#attCard').style.display = s.attendance ? '' : 'none';
       if (s.attendance) {
@@ -137,12 +133,7 @@
 
     $('#saveGrades').addEventListener('click', () => {
       const id = $('#subject').value;
-      const g = { final: $('#final').value };
-      for (const p of ['midterm', 'finals']) {
-        const v = $('#' + p).value;
-        if (v !== '' && (Number(v) < 1 || Number(v) > 5)) { status(`${p} must be between 1.00 and 5.00.`); return; }
-        g[p] = v;
-      }
+      const g = { final: $('#final').value };   // Finals only for now
       const st = $('#gstatus').value;
       D.postGrades(id, g, st);
       status(`Saved grades for ${D.raw.subject(id).title} as ${st}.`);

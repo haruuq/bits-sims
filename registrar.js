@@ -87,6 +87,8 @@
   const initials = (n) => n.replace(/^(Dr\.|Prof\.)\s*/i, '').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
   const oldest = (dates) => { const t = dates.filter(Boolean).map((x) => new Date(x).getTime()).filter((n) => n); if (!t.length) return '\u2014'; const n = Math.max(0, Math.round((Date.now() - Math.min(...t)) / 864e5)); return n + (n === 1 ? ' day' : ' days'); };
   const f2 = (n) => (n == null ? '\u2014' : n.toFixed(2));
+  // Finals only for now: a subject's grade status is the status of its final grade
+  const finalState = (x) => (x.finalGrade == null && x.status !== 'inc' ? 'not yet encoded' : (x.gradeStatus && x.gradeStatus.final) || 'posted');
 
   /* =====================================================
      PAGES
@@ -132,7 +134,7 @@
 
   pages.register = () => {
     const d = reg(), depts = d.setup.Departments.map((x) => x[0]), progs = d.setup.Programs.filter((x) => x[3] === 'Active').map((x) => x[0]);
-    const F = [['Admission', [['dept', 'Department', depts], ['program', 'Program', progs], ['admission', 'Admission Type', ['Freshman', 'Transferee', 'Returnee']], ['year', 'Year Level', ['1st', '2nd', '3rd', '4th']]]],
+    const F = [['Admission', [['dept', 'Department', depts], ['program', 'Program', progs], ['admission', 'Admission Type', ['Freshman', 'Transferee', 'Returnee']], ['year', 'Year Level', ['3rd']]]],
       ['Personal Information', [['first', 'First Name *'], ['middle', 'Middle Name'], ['last', 'Last Name *'], ['dob', 'Date of Birth']]], ['Contact Information', [['email', 'Personal Email'], ['mobile', 'Mobile Number'], ['city', 'City']]],
       ['Parent / Guardian', [['gname', 'Guardian Name'], ['gnum', 'Contact Number']]], ['Emergency Contact', [['ename', 'Contact Name'], ['enum', 'Contact Number']]]];
     return `<h1>Register Student</h1>${F.map(([t, fs]) => `<div class="ad-panel"><h3>${t}</h3><div class="ad-grid">${fs.map(([id, l, o]) => `<label>${l}${o ? `<select id="f_${id}">${o.map((x) => `<option>${esc(x)}</option>`).join('')}</select>` : `<input id="f_${id}">`}</label>`).join('')}</div></div>`).join('')}
@@ -143,7 +145,7 @@
     const d = reg(), s = d.students.find((x) => x.no === viewNo) || d.students[0], real = s.no === DEMO_STUDENT;
     const T = ['Overview', 'General Information', 'Contact Information', 'Guardian Information', 'Grades', 'Documents'];
     let body;
-    if (tab === 'Grades') body = real ? table(['Course', 'Midterm', 'Final', 'Status'], SIMSData.get().subjects.filter((x) => x.termId === '2627-1').map((x) => [x.code, x.grades.midterm == null ? '\u2014' : x.grades.midterm, x.finalGrade == null ? '\u2014' : x.finalGrade, (x.gradeStatus && x.gradeStatus.midterm) || 'posted'])) : '<p>No grades on file.</p>';
+    if (tab === 'Grades') body = real ? table(['Course', 'Finals', 'Status'], SIMSData.get().subjects.filter((x) => x.termId === '2627-1').map((x) => [x.code, x.status === 'inc' ? 'INC' : x.finalGrade == null ? '\u2014' : f2(x.finalGrade), finalState(x)])) : '<p>No grades on file.</p>';
     else if (tab === 'Documents') body = real ? table(['Document', 'Status'], docs().requirements.map((r) => [r.name, r.status])) : '<p>No documents on file.</p>';
     else body = table(['Field', 'Value'], tab === 'Contact Information' ? [['Email', s.email || '\u2014'], ['Mobile', s.mobile || '\u2014'], ['City', s.city || '\u2014']]
       : tab === 'General Information' ? [['Admission type', s.admission], ['Department', s.dept], ['Date of birth', s.dob || '\u2014']]
@@ -205,7 +207,7 @@
     if (rtab === 'Student Records') {
       const me = d.students.find((x) => x.no === DEMO_STUDENT) || d.students[0];
       body = `<div class="ad-row2" style="grid-template-columns:1fr 160px 160px"><div class="ad-card" style="display:flex;gap:1rem;align-items:center"><span class="ad-ra">${esc(initials(me.name.split(', ').reverse().join(' ')))}</span><div><b style="font-size:1.05rem;margin:0">${esc(me.name)}</b><small style="text-transform:none">${esc(me.no)} \u00B7 ${esc(me.program)} \u00B7 ${esc(me.year)} Year</small></div></div><div class="ad-card"><small>Term GPA</small><b>${f2(sm.gwa)}</b></div><div class="ad-card"><small>Cumulative GPA</small><b>${f2(SIMSData.cumulativeGwa())}</b></div></div>
-        ${table(['Course', 'Units', 'Midterm', 'Final', 'Remarks', 'Status'], sm.subjects.map((x) => [x.code + ' \u00B7 ' + x.title, x.units.toFixed(1), f2(x.grades.midterm), f2(x.finalGrade), x.status === 'inprogress' ? 'In progress' : x.status, (SIMSData.raw.subject(x.id).gradeStatus || {}).midterm || 'posted']))}<p class="ad-note">Posted grades change only through the controlled correction process.</p>`;
+        ${table(['Course', 'Units', 'Finals', 'Remarks', 'Status'], sm.subjects.map((x) => SIMSData.raw.subject(x.id)).map((x) => [x.code + ' \u00B7 ' + x.title, x.units.toFixed(1), x.status === 'inc' ? 'INC' : f2(x.finalGrade), x.status === 'inprogress' ? 'In progress' : x.status, finalState(x)]))}<p class="ad-note">Posted grades change only through the controlled correction process.</p>`;
     } else if (rtab === 'Grade Management') {
       body = gradePanels();
     } else if (rtab === 'Academic Setup') {
