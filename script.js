@@ -84,11 +84,15 @@ document.addEventListener('DOMContentLoaded', () => {
     loginError.hidden = !message;
   }
 
+  let studentAccount = null;   // the signed-in student (for change password)
+
   function authenticate(username, password) {
     const account = window.SIMSAccounts && SIMSAccounts.find(username);
-    if (!account) return { ok: false, message: 'Account not found. Check your username or email.' };
+    // Same message for a wrong username and a wrong password (no account guessing)
+    if (!account) return { ok: false, message: SIMSAuth.GENERIC };
     if (account.role === 'STUDENT') {
-      return password === account.password ? { ok: true, account } : { ok: false, message: 'Incorrect password.' };
+      const r = SIMSAuth.check(account, password);   // lockout lives in auth.js
+      return r.ok ? { ok: true, account } : r;
     }
     if (account.role === 'REGISTRAR') return SIMSRegistrar.authenticate(username, password);
     return SIMSStaff.authenticate(username, password);
@@ -97,6 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function openPortal(account) {
     loginView.classList.add('hidden');
     if (account.role === 'STUDENT') {
+      studentAccount = account;
       dashboardView.classList.remove('hidden');
     } else if (account.role === 'REGISTRAR') {
       persistProfile(); persistDocs(); persistAdm(); // make sure the Registrar sees the student's stores
@@ -123,10 +128,90 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     showLoginError('');
+    if (loginNotice) loginNotice.hidden = true;
     openPortal(result.account);
   });
 
   loginForm.addEventListener('input', () => showLoginError(''));
+
+  /* ---- Forgot password (rules and codes live in auth.js) ---- */
+  const loginPanel = $('#loginPanel');
+  const resetPanel = $('#resetPanel');
+  const resetRequestForm = $('#resetRequestForm');
+  const resetCompleteForm = $('#resetCompleteForm');
+  const loginNotice = $('#loginNotice');
+  let resetFor = '';   // what the user typed in step 1
+
+  const showMsg = (el, message) => { el.textContent = message || ''; el.hidden = !message; };
+
+  function showLogin(notice) {
+    resetPanel.hidden = true;
+    loginPanel.hidden = false;
+    showMsg(loginNotice, notice);
+    $('#username').focus();
+  }
+
+  function showReset() {
+    showLoginError('');
+    showMsg(loginNotice, '');
+    resetRequestForm.reset();
+    resetCompleteForm.reset();
+    resetRequestForm.hidden = false;
+    resetCompleteForm.hidden = true;
+    showMsg($('#resetRequestError'), '');
+    $('#resetId').value = $('#username').value.trim();
+    loginPanel.hidden = true;
+    resetPanel.hidden = false;
+    $('#resetId').focus();
+  }
+
+  function sendCode(id) {
+    const reply = SIMSAuth.requestReset(id);
+    resetFor = id;
+    $('#resetSentMsg').textContent = reply.message;
+    const inbox = $('#resetDemoInbox');
+    if (reply.demo) {
+      inbox.innerHTML = '<strong>Demo inbox</strong> <small>(prototype: stands in for the email)</small><br>' +
+        `To: ${reply.demo.email}<br>` +
+        (reply.demo.code ? `Your BITS-SIMS password reset code is <b class="reset-code">${reply.demo.code}</b>. It expires in 15 minutes.` : '') +
+        (reply.demo.note ? `<br><small>${reply.demo.note}</small>` : '');
+      inbox.hidden = false;
+    } else {
+      inbox.innerHTML = '';
+      inbox.hidden = true;
+    }
+    showMsg($('#resetError'), '');
+    resetRequestForm.hidden = true;
+    resetCompleteForm.hidden = false;
+    $('#resetCode').focus();
+  }
+
+  $('#forgotLink').addEventListener('click', (e) => { e.preventDefault(); showReset(); });
+  $('#resetBack').addEventListener('click', (e) => { e.preventDefault(); showLogin(''); });
+  $('#resetResend').addEventListener('click', (e) => { e.preventDefault(); sendCode(resetFor); });
+
+  resetRequestForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const id = $('#resetId').value.trim();
+    if (!id) { showMsg($('#resetRequestError'), 'Enter your username, email or student number.'); return; }
+    showMsg($('#resetRequestError'), '');
+    sendCode(id);
+  });
+
+  resetCompleteForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const r = SIMSAuth.completeReset(resetFor, $('#resetCode').value, $('#resetPw').value, $('#resetConfirm').value);
+    if (!r.ok) {
+      showMsg($('#resetError'), r.message);
+      const field = { code: '#resetCode', pw: '#resetPw', confirm: '#resetConfirm' }[r.field];
+      if (field) $(field).focus();
+      return;
+    }
+    loginForm.reset();
+    $('#username').value = resetFor;
+    showLogin('Your password was changed. Log in with your new password.');
+    $('#password').focus();
+  });
 
   // Demo accounts list (prototype) - built from accounts.js so it never drifts
   const demoList = $('#demoAccounts');
@@ -1251,7 +1336,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast('Changes discarded.', 'info');
   });
 
-  /* ---- Change password (prototype: no server to verify the current password) ---- */
+  /* ---- Change password (checked and saved through auth.js) ---- */
   function passwordStrength(pw) {
     if (!pw) return 0;
     let score = 0;
@@ -1292,10 +1377,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!current) {
       setError('pwCurrent', 'Enter your current password.');
       valid = false;
+    } else if (studentAccount && !SIMSAuth.verify(studentAccount, current)) {
+      setError('pwCurrent', 'Current password is incorrect.');
+      valid = false;
     }
 
-    if (next.length < 8 || !/[A-Za-z]/.test(next) || !/\d/.test(next)) {
-      setError('pwNew', 'Use at least 8 characters with letters and numbers.');
+    const problem = SIMSAuth.passwordProblem(next);
+    if (problem) {
+      setError('pwNew', problem);
       valid = false;
     } else if (next === current) {
       setError('pwNew', 'Choose a password different from your current one.');
@@ -1315,6 +1404,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    if (studentAccount) SIMSAuth.setPassword(studentAccount.username, next);
     passwordForm.reset();
     $$('.pw-toggle').forEach((btn) => {
       $('#' + btn.dataset.target).type = 'password';

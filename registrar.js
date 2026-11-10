@@ -55,7 +55,7 @@
   /* ---------- Registry + settings ---------- */
   const reg = () => window.SIMSRegistry.get();
   const saveReg = (d) => window.SIMSRegistry.save(d);
-  const settings = () => Object.assign({ email: acct.email, mobile: acct.contact, office: acct.dept, pw: '', notif: { queue: true, grades: true, login: false } }, rd(K.me + ':' + acct.username, {}));
+  const settings = () => Object.assign({ email: acct.email, mobile: acct.contact, office: acct.dept, notif: { queue: true, grades: true, login: false } }, rd(K.me + ':' + acct.username, {}));
   const saveSettings = (m) => wr(K.me + ':' + acct.username, m);
 
   /* ---------- Audit (shared with the ICT audit trail) ---------- */
@@ -375,12 +375,12 @@
     } else if (a === 'savecontact') {
       const m = settings(); Object.assign(m, { email: val('s_email'), mobile: val('s_mobile'), office: val('s_office') }); saveSettings(m); alert('Saved.'); return false;
     } else if (a === 'savepw') {
-      const m = settings(), n = val('p_new');
+      const n = val('p_new'), problem = SIMSAuth.passwordProblem(n);
       if (!val('p_cur')) { alert('Enter your current password.'); return false; }
-      if (val('p_cur') !== (m.pw || acct.password)) { alert('Current password is incorrect.'); return false; }
-      if (n.length < 8 || !/[a-z]/i.test(n) || !/\d/.test(n)) { alert('Use at least 8 characters with letters and numbers.'); return false; }
+      if (!SIMSAuth.verify(acct, val('p_cur'))) { alert('Current password is incorrect.'); return false; }
+      if (problem) { alert(problem); return false; }
       if (n !== val('p_con')) { alert('Passwords do not match.'); return false; }
-      m.pw = n; saveSettings(m); log('Changed own password', 'Authentication', 'Users', acct.username, 'UPDATE'); alert('Password updated.'); return false;
+      SIMSAuth.setPassword(acct.username, n); log('Changed own password', 'Authentication', 'Users', acct.username, 'UPDATE'); alert('Password updated.'); return false;
     } else if (a === 'savenotif') {
       const m = settings(); document.querySelectorAll('.nt').forEach((c) => { m.notif[c.value] = c.checked; }); saveSettings(m); alert('Saved.'); return false;
     } else return false;
@@ -394,10 +394,9 @@
 
   function authenticate(username, password) {
     const a = find(username);
-    if (!a) return { ok: false, message: 'Account not found.' };
-    const pw = (rd(K.me + ':' + a.username, {}) || {}).pw || a.password;
-    if (password !== pw) return { ok: false, message: 'Incorrect password.' };
-    return { ok: true, account: a };
+    if (!a) return { ok: false, message: 'Incorrect username or password.' };
+    const r = SIMSAuth.check(a, password);   // lockout + generic errors live in auth.js
+    return r.ok ? { ok: true, account: a } : r;
   }
 
   function bind(root) {
