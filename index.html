@@ -698,20 +698,6 @@
 
           </div>
 
-          <!-- Confirm dialog -->
-          <div id="confirmModal" class="modal hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMsg">
-            <div class="modal-card">
-              <header class="modal-head">
-                <h3 id="confirmTitle"></h3>
-                <button type="button" class="modal-close" id="confirmClose" aria-label="Close">&times;</button>
-              </header>
-              <div class="modal-body"><p id="confirmMsg" class="dm-modal-note"></p></div>
-              <footer class="modal-foot">
-                <button type="button" class="btn-light btn-sm" id="confirmCancel">Cancel</button>
-                <button type="button" class="btn-solid btn-sm" id="confirmOk">Confirm</button>
-              </footer>
-            </div>
-          </div>
         </section>
 
         <!-- PAGE: DOCUMENT MANAGEMENT -->
@@ -1188,6 +1174,21 @@
             <p>This section hasn't been built yet.</p>
           </div>
         </section>
+
+        <!-- Confirm dialog (shared by every page, so it lives outside them) -->
+        <div id="confirmModal" class="modal hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMsg">
+          <div class="modal-card">
+            <header class="modal-head">
+              <h3 id="confirmTitle"></h3>
+              <button type="button" class="modal-close" id="confirmClose" aria-label="Close">&times;</button>
+            </header>
+            <div class="modal-body"><p id="confirmMsg" class="dm-modal-note"></p></div>
+            <footer class="modal-foot">
+              <button type="button" class="btn-light btn-sm" id="confirmCancel">Cancel</button>
+              <button type="button" class="btn-solid btn-sm" id="confirmOk">Confirm</button>
+            </footer>
+          </div>
+        </div>
 
         <div id="toast" class="toast" role="status" aria-live="polite"></div>
       </main>

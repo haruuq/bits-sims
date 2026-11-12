@@ -940,7 +940,6 @@ document.addEventListener('DOMContentLoaded', () => {
           <span class="paper-mark" aria-hidden="true">B</span>
           <div><strong>BITS-SIMS</strong><small>Student Information Management System</small></div>
         </div>
-        <span class="paper-sample">System-generated &middot; Sample data</span>
       </div>
       <h3 class="paper-title">${title}</h3>
       <p class="paper-subtitle">${subtitle}</p>`;
@@ -948,7 +947,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function infoRows(rows) {
     return `<dl class="paper-info">${rows
-      .map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`)
+      .map(([k, v]) => `<div><dt>${esc(k)}:</dt><dd>${esc(v)}</dd></div>`)
       .join('')}</dl>`;
   }
 
