@@ -231,3 +231,4 @@
 .staff-stats-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .staff-stat .dm-stat-value small { font-size: 0.9rem; font-weight: 600; margin-left: 0.2rem; color: #4a5a6a; }
 #acctList .staff-actions .btn-sm { padding-left: 0.75rem; padding-right: 0.75rem; }
+#edEvents { min-width: 0; }

@@ -213,7 +213,9 @@
   // Scope for now: 3rd year only, all classes face-to-face
   const YEAR_LEVEL = '3rd Year';
   const MODALITY = 'Face-to-Face';
-  const ROOMS = ['ITLAB-01', 'ITLAB-02', 'ITLAB-03', 'RM-101', 'RM-204', 'RM-305'];
+  // Rooms come from the Registrar's Academic Setup; rooms under maintenance can't be booked
+  const ROOMS_ALL = () => (window.SIMSRegistry ? SIMSRegistry.get().setup.Rooms : []).map((r) => ({ code: r[0], status: r[3] }));
+  const ROOMS_OK = () => ROOMS_ALL().filter((r) => r.status !== 'Under Maintenance').map((r) => r.code);
   const seedClasses = () => [
     { id: 'CO-1', code: 'ITP3112R', title: 'System Administration and Maintenance 1', section: '3B', year: '3rd Year', faculty: 'faculty.reyes', day: 'Monday', start: '08:00', end: '11:00', room: 'ITLAB-01', modality: 'Face-to-Face', type: 'Combined', capacity: 40, size: 8, status: 'Open' },
     { id: 'CO-2', code: 'ITP3111R', title: 'Network Management 2', section: '3B', year: '3rd Year', faculty: 'faculty.reyes', day: 'Tuesday', start: '13:00', end: '16:00', room: 'ITLAB-02', modality: 'Face-to-Face', type: 'Combined', capacity: 40, size: 8, status: 'Open' },
@@ -606,13 +608,13 @@
       const help = u.filter((x) => ['Locked', 'Pending Activation'].includes(x.status) && x.role !== 'ICT_ADMIN');
       return `${head(`Welcome back, ${me.name.split(' ')[0]}`, 'Education technology operations: schedules, class assignments and platform health.')}
         <div class="staff-stats">
-          ${stat('PLATFORM HEALTH', healthSummary(), 'From live monitoring')}
+          ${(() => { const bad = db.events.filter((e) => e.status !== 'Resolved' && ['Error', 'Critical'].includes(e.severity)).length; return bad ? stat('PLATFORM HEALTH', 'Attention', `${bad} error event${bad === 1 ? '' : 's'} still open`) : stat('PLATFORM HEALTH', healthSummary(), 'From live monitoring'); })()}
           ${stat('OPEN SYSTEM EVENTS', db.events.filter((e) => e.status !== 'Resolved').length, 'Awaiting resolution')}
           ${stat('CLASS OFFERINGS', db.classes.length, `${totalConflicts()} schedule conflict(s)`)}
           ${stat('ACCOUNTS NEEDING HELP', help.length, 'Locked or pending activation', 'is-blue')}
         </div>
         <div class="staff-split">
-          ${card('Open system events', table(['Event', 'Module', 'Severity', 'Status'], db.events.filter((e) => e.status !== 'Resolved').map((e) => `<tr><td>${esc(e.desc)}</td><td>${esc(e.module)}</td><td>${badge(e.severity)}</td><td>${badge(e.status)}</td></tr>`), 'No open events.'))}
+          ${card('Open system events', table(['Event', 'Description', 'Severity', 'Status'], db.events.filter((e) => e.status !== 'Resolved').map((e) => `<tr><td><strong>${esc(e.id)}</strong><br><small>${esc(fmtStamp(e.ts))}</small></td><td>${esc(e.desc)}<br><small>${esc(e.module)}</small></td><td>${badge(e.severity)}</td><td>${badge(e.status)}</td></tr>`), 'No open events.', 'edEvents'))}
           <div class="staff-stack">
             ${card('Quick actions', `<div class="staff-quick"><button type="button" class="btn-solid" data-nav="classes">Manage schedules</button><button type="button" class="btn-light" data-nav="monitoring">Monitoring</button><button type="button" class="btn-light" data-nav="accounts">Account support</button></div>`)}
             ${card('Accounts needing help', help.length ? `<ul class="staff-list">${help.map((x) => `<li><div><strong>${esc(x.name)}</strong><small>${esc(x.username)} \u00B7 ${esc(ROLE_LABEL[x.role])}</small></div>${badge(x.status)}</li>`).join('')}</ul>` : '<p class="dm-modal-note">No locked or pending accounts.</p>')}
@@ -694,7 +696,7 @@
            <button type="button" class="btn-light btn-sm" data-act="acct-reset" data-id="${u.id}">Reset password</button>
            ${u.status === 'Locked' ? `<button type="button" class="btn-solid btn-sm" data-act="acct-unlock" data-id="${u.id}">Unlock</button>` : ''}
            ${self ? '' : `<button type="button" class="btn-light btn-sm" data-act="acct-toggle" data-id="${u.id}">${u.status === 'Suspended' ? 'Reactivate' : 'Suspend'}</button>`}`
-        : (protectedAcct ? '<small>Restricted</small>' : `${u.status === 'Locked' ? `<button type="button" class="btn-solid btn-sm" data-act="acct-unlock" data-id="${u.id}">Unlock</button>` : ''}<button type="button" class="btn-light btn-sm" data-act="acct-reset" data-id="${u.id}">Send reset code</button>`);
+        : (protectedAcct ? '<small>Restricted</small>' : `${u.status === 'Locked' ? `<button type="button" class="btn-solid btn-sm" data-act="acct-unlock" data-id="${u.id}">Unlock</button>` : ''}${u.status === 'Suspended' ? '<small>Ask ICT Services</small>' : `<button type="button" class="btn-light btn-sm" data-act="acct-reset" data-id="${u.id}">Send reset code</button>`}`);
       return full
         ? `<tr><td><strong>${esc(u.name)}</strong><br><small>${esc(u.username)} \u00B7 ${esc(u.email)}</small></td><td>${esc(ROLE_LABEL[u.role])}</td><td>${badge(u.status)}</td><td>${u.failed}</td><td>${esc(u.lastLogin ? fmtStamp(u.lastLogin) : 'Never')}</td><td class="staff-actions">${acts}</td></tr>`
         : `<tr><td><strong>${esc(u.name)}</strong><br><small>${esc(u.username)} \u00B7 ${esc(maskEmail(u.email))}</small></td><td>${badge(u.status)}</td><td>${u.failed}</td><td>${esc(u.lastLogin ? fmtStamp(u.lastLogin) : 'Never')}</td><td class="staff-actions">${acts}</td></tr>`;
@@ -853,23 +855,26 @@
     const conflicts = totalConflicts();
     const isDH = me.role === 'DEPT_HEAD';
     return `${head(isDH ? 'Classes & Faculty' : 'Classes & Schedules', isDH ? 'Create class offerings, assign faculty and set schedules and rooms. Changes are checked for room and faculty conflicts.' : 'Adjust meeting times, rooms and faculty assignment. Changes are checked for room and faculty conflicts.', isDH ? '<button type="button" class="btn-solid" data-act="cls-new">+ New class offering</button>' : '')}
-      <div class="staff-stats">${stat('OFFERINGS', db.classes.length, '1st Semester, AY 2026\u20132027')}${stat('SCHEDULE CONFLICTS', conflicts, conflicts ? 'Needs fixing' : 'None found')}${stat('ROOMS IN USE', new Set(db.classes.map((c) => c.room)).size, `of ${ROOMS.length}`)}${stat('FACULTY ASSIGNED', new Set(db.classes.map((c) => c.faculty)).size, 'With at least one class', 'is-blue')}</div>
-      ${card('', table(['Course', 'Section', 'Faculty', 'Schedule', 'Room', 'Enrolled', 'Status', ''], db.classes.map((c) => { const cf = findConflicts(c); return `<tr><td><strong>${esc(c.code)}</strong><br><small>${esc(c.title)}</small></td><td>${esc(c.section)}</td><td>${esc(userName(c.faculty))}</td><td>${esc(schedText(c))}</td><td>${esc(c.room)}</td><td>${c.size}/${c.capacity}</td><td>${badge(c.status)}${cf.length ? '<br><span class="dm-status risk">Conflict</span>' : ''}</td><td><button type="button" class="btn-light btn-sm" data-act="cls-edit" data-id="${c.id}">Edit</button></td></tr>`; })))}`;
+      <div class="staff-stats">${stat('OFFERINGS', db.classes.length, '1st Semester, AY 2026\u20132027')}${stat('SCHEDULE CONFLICTS', conflicts, conflicts ? 'Needs fixing' : 'None found')}${stat('ROOMS IN USE', new Set(db.classes.map((c) => c.room)).size, `of ${ROOMS_OK().length} available`)}${stat('FACULTY ASSIGNED', new Set(db.classes.map((c) => c.faculty)).size, 'With at least one class', 'is-blue')}</div>
+      ${card('', table(['Course', 'Section', 'Faculty', 'Schedule', 'Room', 'Enrolled', 'Status', ''], db.classes.map((c) => { const cf = findConflicts(c); return `<tr><td><strong>${esc(c.code)}</strong><br><small>${esc(c.title)}</small></td><td>${esc(c.section)}</td><td>${esc(userName(c.faculty))}</td><td>${esc(schedText(c))}</td><td>${esc(c.room)}</td><td>${c.size}/${c.capacity}</td><td>${(c.status === 'Open' ? '<span class="dm-status info">Open</span>' : badge(c.status))}${cf.length ? '<br><span class="dm-status risk">Conflict</span>' : ''}</td><td><button type="button" class="btn-light btn-sm" data-act="cls-edit" data-id="${c.id}">Edit</button></td></tr>`; })))}`;
   };
   function classForm(c) {
-    const faculty = db.users.filter((u) => u.role === 'FACULTY' && u.status !== 'Suspended' && u.status !== 'Inactive');
+    const faculty = db.users.filter((u) => u.role === 'FACULTY' && (u.status === 'Active' || u.username === c.faculty));
+    const facField = me.role === 'EDTECH'
+      ? field('cfFacRO', 'Assigned faculty', `<input id="cfFacRO" value="${esc(userName(c.faculty))}" disabled />`, 'Faculty are assigned by the Department Head.')
+      : field('cfFac', 'Assigned faculty', `<select id="cfFac" class="dm-select">${opts(faculty.map((u) => [u.username, u.name]), c.faculty)}</select>`);
     return `<form id="clsForm" class="staff-form" novalidate>
       <p class="dm-modal-note"><strong>${esc(c.code)} ${esc(c.section)}</strong> \u2014 ${esc(c.title)}</p>
       <div class="set-grid-2">
-        ${field('cfFac', 'Assigned faculty', `<select id="cfFac" class="dm-select">${opts(faculty.map((u) => [u.username, u.name]), c.faculty)}</select>`)}
-        ${field('cfRoom', 'Room', `<select id="cfRoom" class="dm-select">${opts(ROOMS.map((r) => [r, r]), c.room)}</select>`)}
+        ${facField}
+        ${field('cfRoom', 'Room', `<select id="cfRoom" class="dm-select">${opts([...new Set(ROOMS_OK().concat(c.room))].map((r) => [r, r]), c.room)}</select>`)}
         ${field('cfDay', 'Day', `<select id="cfDay" class="dm-select">${opts(Object.keys(DAY_IDX).map((d) => [d, d]), c.day)}</select>`)}
         ${field('cfStart', 'Start time', `<input id="cfStart" type="time" value="${c.start}" />`)}
         ${field('cfEnd', 'End time', `<input id="cfEnd" type="time" value="${c.end}" />`)}
       </div></form>`;
   }
   function saveClass(c) {
-    const next = Object.assign({}, c, { faculty: $('#cfFac').value, room: $('#cfRoom').value, day: $('#cfDay').value, modality: MODALITY, start: $('#cfStart').value, end: $('#cfEnd').value });
+    const next = Object.assign({}, c, { faculty: $('#cfFac') ? $('#cfFac').value : c.faculty, room: $('#cfRoom').value, day: $('#cfDay').value, modality: MODALITY, start: $('#cfStart').value, end: $('#cfEnd').value });
     setErr('cfEnd', '');
     if (!next.start || !next.end || toMin(next.end) <= toMin(next.start)) { setErr('cfEnd', 'End time must be after the start time.'); return false; }
     const conflicts = findConflicts(next);
@@ -1049,13 +1054,13 @@
   const REPORTS = [
     { id: 'users', name: 'User Accounts Report', roles: ['ICT_ADMIN'], filters: [], build: () => ({ cols: ['Username', 'Name', 'Email', 'Role', 'Status', 'Failed logins', 'Last login'], rows: db.users.map((u) => [u.username, u.name, u.email, ROLE_LABEL[u.role], u.status, u.failed, u.lastLogin ? fmtStamp(u.lastLogin) : 'Never']) }) },
     { id: 'roles', name: 'Role Assignment Report', roles: ['ICT_ADMIN'], filters: [], build: () => ({ cols: ['Role', 'Users assigned', 'Permissions granted'], rows: ROLE_ORDER.map((r) => [ROLE_LABEL[r], db.users.filter((u) => u.role === r).length, db.perms[r].join(', ')]) }) },
-    { id: 'audit', name: 'Audit Activity Report', roles: ['ICT_ADMIN'], filters: ['range'], build: () => ({ cols: ['Time', 'User', 'Module', 'Action', 'Description', 'Result'], rows: db.audit.filter((a) => inRange(a.ts)).map((a) => [a.ts, a.user, a.mod, a.act, a.desc, a.status]) }) },
+    { id: 'audit', name: 'Audit Activity Report', roles: ['ICT_ADMIN'], filters: ['range'], build: () => ({ cols: ['Time', 'User', 'Module', 'Action', 'Description', 'Result'], rows: db.audit.filter((a) => inRange(a.ts)).map((a) => [fmtStamp(a.ts), a.user, a.mod, a.act, a.desc, a.status]) }) },
     { id: 'backups', name: 'Backup History Report', roles: ['ICT_ADMIN'], filters: ['range'], build: () => ({ cols: ['ID', 'Started', 'Type', 'Size', 'Status', 'Restore tested'], rows: db.backups.history.filter((b) => inRange(b.start)).map((b) => [b.id, b.start, b.type, b.size ? fmtBytes(b.size) : '\u2014', b.status, b.restoreTested || '\u2014']) }) },
-    { id: 'events', name: 'System Event Report', roles: ['ICT_ADMIN', 'EDTECH'], filters: ['range'], build: () => ({ cols: ['ID', 'Time', 'Type', 'Module', 'Description', 'Severity', 'Status'], rows: db.events.filter((e) => inRange(e.ts)).map((e) => [e.id, e.ts, e.type, e.module, e.desc, e.severity, e.status]) }) },
+    { id: 'events', name: 'System Event Report', roles: ['ICT_ADMIN', 'EDTECH'], filters: ['range'], build: () => ({ cols: ['ID', 'Time', 'Type', 'Module', 'Description', 'Severity', 'Status'], rows: db.events.filter((e) => inRange(e.ts)).map((e) => [e.id, fmtStamp(e.ts), e.type, e.module, e.desc, e.severity, e.status]) }) },
     { id: 'history', name: 'Report Generation History', roles: ['ICT_ADMIN'], filters: [], build: () => ({ cols: ['Generated', 'Report', 'By', 'Records'], rows: db.reports.map((r) => [r.ts, r.name, r.by, r.count]) }) },
     { id: 'schedule', name: 'Class Schedule Report', roles: ['EDTECH', 'DEPT_HEAD'], filters: [], build: () => ({ cols: ['Course', 'Section', 'Faculty', 'Day', 'Time', 'Room', 'Modality', 'Status'], rows: db.classes.map((c) => [c.code, c.section, userName(c.faculty), c.day, `${fmtTime(c.start)}\u2013${fmtTime(c.end)}`, c.room, c.modality, c.status]) }) },
     { id: 'assign', name: 'Faculty Teaching Assignment Report', roles: ['EDTECH', 'DEPT_HEAD'], filters: [], build: () => ({ cols: ['Faculty', 'Course', 'Section', 'Enrolled', 'Capacity'], rows: [...db.classes].sort((a, b) => userName(a.faculty).localeCompare(userName(b.faculty))).map((c) => [userName(c.faculty), `${c.code} ${c.title}`, c.section, c.size, c.capacity]) }) },
-    { id: 'rooms', name: 'Room Utilization Report', roles: ['EDTECH'], filters: [], build: () => ({ cols: ['Room', 'Weekly meetings', 'Hours per week', 'Classes'], rows: ROOMS.map((r) => { const l = db.classes.filter((c) => c.room === r); return [r, l.length, (l.reduce((n, c) => n + toMin(c.end) - toMin(c.start), 0) / 60).toFixed(1), l.map((c) => `${c.code} ${c.section}`).join(', ') || '\u2014']; }) }) },
+    { id: 'rooms', name: 'Room Utilization Report', roles: ['EDTECH'], filters: [], build: () => ({ cols: ['Room', 'Weekly meetings', 'Hours per week', 'Classes'], rows: ROOMS_ALL().map(({ code: r, status }) => { const l = db.classes.filter((c) => c.room === r); return [status === 'Under Maintenance' ? `${r} (under maintenance)` : r, l.length, (l.reduce((n, c) => n + toMin(c.end) - toMin(c.start), 0) / 60).toFixed(1), l.map((c) => `${c.code} ${c.section}`).join(', ') || '\u2014']; }) }) },
     { id: 'deptstudents', name: 'Department Student List', roles: ['DEPT_HEAD'], filters: [], build: () => ({ cols: ['Student no.', 'Name', 'Program', 'Year', 'Admission', 'Status'], rows: deptStudents().map((s) => [s.no, s.name, s.program, s.year, s.admission, s.status]) }) },
     { id: 'deptstatus', name: 'Department Student Status Report', roles: ['DEPT_HEAD'], filters: [], build: () => ({ cols: ['Status', 'Students'], rows: Object.entries(deptStudents().reduce((a, s) => { a[s.status] = (a[s.status] || 0) + 1; return a; }, {})) }) },
     { id: 'deptatt', name: 'Department Attendance Summary', roles: ['DEPT_HEAD'], filters: [], build: () => ({ cols: ['Course', 'Section', 'Faculty', 'Meetings', 'Absences', 'Late', 'Attendance %'], rows: attendanceSummary().map((r) => [r.code, r.section, r.faculty, r.held, r.absent, r.late, r.rate === null ? '\u2014' : r.rate.toFixed(1) + '%']) }) },
@@ -1416,14 +1421,14 @@
 
   /* ---------- New class offering ---------- */
   function newClassForm() {
-    const faculty = db.users.filter((u) => u.role === 'FACULTY' && u.status !== 'Suspended' && u.status !== 'Inactive');
+    const faculty = db.users.filter((u) => u.role === 'FACULTY' && u.status === 'Active');
     return `<form id="ncForm" class="staff-form" novalidate>
       <div class="set-grid-2">
         ${field('ncCode', 'Course code', '<input id="ncCode" placeholder="e.g. ITP3113R" />')}
         ${field('ncTitle', 'Course title', '<input id="ncTitle" />')}
         ${field('ncSection', 'Section', '<input id="ncSection" placeholder="e.g. 3B" />')}
         ${field('ncFac', 'Assigned faculty', `<select id="ncFac" class="dm-select">${opts(faculty.map((u) => [u.username, u.name]), '')}</select>`)}
-        ${field('ncRoom', 'Room', `<select id="ncRoom" class="dm-select">${opts(ROOMS.map((r) => [r, r]), '')}</select>`)}
+        ${field('ncRoom', 'Room', `<select id="ncRoom" class="dm-select">${opts(ROOMS_OK().map((r) => [r, r]), '')}</select>`)}
         ${field('ncDay', 'Day', `<select id="ncDay" class="dm-select">${opts(Object.keys(DAY_IDX).map((d) => [d, d]), 'Monday')}</select>`)}
         ${field('ncStart', 'Start time', '<input id="ncStart" type="time" />')}
         ${field('ncEnd', 'End time', '<input id="ncEnd" type="time" />')}
