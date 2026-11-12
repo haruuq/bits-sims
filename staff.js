@@ -51,7 +51,7 @@
     reports: 'bits-sims-staff-reports', pw: 'bits-sims-staff-pw', locks: 'bits-sims-staff-locks'
   };
   // Bump when the seed data changes so everyone's old browser data resets
-  const STAFF_VERSION = 4;
+  const STAFF_VERSION = 5;
   try {
     if (localStorage.getItem('bits-sims-staff-version') !== String(STAFF_VERSION)) {
       Object.values(K).forEach((k) => localStorage.removeItem(k));
@@ -154,7 +154,7 @@
   });
 
   const mkUser = (id, username, name, email, role, status, mfa, failed, last, created) =>
-    ({ id, username, name, email, role, status, mfa, failed, lockoutUntil: '', lastLogin: last, mustChange: status === 'Pending Activation', created: created || '2026-06-01' });
+    ({ id, username, name, email, role, status, failed, lockoutUntil: '', lastLogin: last, mustChange: status === 'Pending Activation', created: created || '2026-06-01' });
   const seedUsers = () => [
     mkUser(1, 'ict.admin', 'Marco Villanueva', 'ict.admin@bits.edu.ph', 'ICT_ADMIN', 'Active', true, 0, '2026-11-09 08:14', '2019-06-03'),
     mkUser(2, 'edtech.staff', 'Lara Mendoza', 'edtech@bits.edu.ph', 'EDTECH', 'Active', true, 0, '2026-11-09 07:50', '2021-01-18'),
@@ -171,18 +171,20 @@
   const seedAudit = () => {
     const a = (ts, user, mod, ent, rec, act, desc, status, ip, prev, next) => ({ id: 0, ts, user, mod, ent, rec, act, desc, status: status || 'Success', ip: ip || '10.10.1.24', prev: prev || '', next: next || '' });
     const list = [
-      a('2026-11-09 08:14', 'ict.admin', 'Authentication', 'Users', 'U-1', 'LOGIN', 'Successful login', 'Success', '10.10.1.5'),
-      a('2026-11-09 07:50', 'edtech.staff', 'Authentication', 'Users', 'U-2', 'LOGIN', 'Successful login', 'Success', '10.10.2.17'),
-      a('2026-11-09 07:02', 'faculty.reyes', 'Authentication', 'Users', 'U-3', 'LOGIN', 'Successful login', 'Success', '10.10.3.40'),
-      a('2026-11-08 17:05', 'faculty.reyes', 'Attendance', 'AttendanceSessions', 'ITA312R|2026-11-04', 'APPROVE', 'Attendance submitted for ITA312R 3B', 'Success', '10.10.3.40'),
-      a('2026-11-08 16:40', 'registrar.santos', 'Registration', 'Students', 'S-2024-12345', 'UPDATE', 'Updated contact number', 'Success', '10.10.4.8', 'mobile: 0917 000 0000', 'mobile: 0917 123 4567'),
-      a('2026-11-07 14:02', 'ict.admin', 'User Accounts', 'Users', 'U-8', 'CREATE', 'Created account faculty.ocampo', 'Success', '10.10.1.5'),
-      a('2026-11-06 02:00', 'SYSTEM', 'Backup', 'BackupHistory', 'BK-0021', 'BACKUP', 'Scheduled full backup completed', 'Success', ''),
-      a('2026-11-05 11:31', 'faculty.lim', 'Authentication', 'Users', 'U-7', 'LOGIN', 'Failed login (wrong password) x5 - account locked', 'Failed', '10.10.3.77'),
-      a('2026-11-04 15:20', 'ict.admin', 'User Accounts', 'Users', 'U-9', 'UPDATE', 'Suspended account registrar.dizon', 'Success', '10.10.1.5', 'status: Active', 'status: Suspended'),
+      a('2026-11-09 08:14', 'ict.admin', 'Authentication', 'Users', 'ict.admin', 'LOGIN', 'Successful login', 'Success', '10.10.1.5'),
+      a('2026-11-09 07:50', 'edtech.staff', 'Authentication', 'Users', 'edtech.staff', 'LOGIN', 'Successful login', 'Success', '10.10.2.17'),
+      a('2026-11-09 07:02', 'faculty.reyes', 'Authentication', 'Users', 'faculty.reyes', 'LOGIN', 'Successful login', 'Success', '10.10.3.40'),
+      a('2026-11-09 02:14', 'SYSTEM', 'Backup', 'BackupHistory', 'BK-0021', 'BACKUP', 'Scheduled full backup completed', 'Success', ''),
+      a('2026-11-08 17:05', 'faculty.reyes', 'Attendance', 'AttendanceSessions', 'ITA312R|2026-11-04', 'SUBMIT', 'Attendance submitted for ITA312R 3B', 'Success', '10.10.3.40'),
+      a('2026-11-08 16:40', 'registrar.santos', 'Registration', 'Students', '2024-12345', 'UPDATE', 'Updated contact number', 'Success', '10.10.4.8', 'mobile: 0917 000 0000', 'mobile: 0917 123 4567'),
+      a('2026-11-07 14:02', 'ict.admin', 'User Accounts', 'Users', 'faculty.ocampo', 'CREATE', 'Created account faculty.ocampo', 'Success', '10.10.1.5'),
+      a('2026-11-06 09:10', 'ict.admin', 'Backup', 'BackupHistory', 'BK-0018', 'UPDATE', 'Restore test passed for BK-0018', 'Success', '10.10.1.5'),
+      a('2026-11-06 02:12', 'SYSTEM', 'Backup', 'BackupHistory', 'BK-0018', 'BACKUP', 'Scheduled full backup completed', 'Success', ''),
+      a('2026-11-05 11:31', 'faculty.lim', 'Authentication', 'Users', 'faculty.lim', 'LOGIN', 'Failed login (wrong password) x5 - account locked', 'Failed', '10.10.3.77'),
+      a('2026-11-04 15:20', 'ict.admin', 'User Accounts', 'Users', 'registrar.dizon', 'UPDATE', 'Suspended account registrar.dizon', 'Success', '10.10.1.5', 'status: Active', 'status: Suspended'),
       a('2026-11-03 10:11', 'edtech.staff', 'Scheduling', 'ClassSchedules', 'CO-4', 'UPDATE', 'Changed room for GEN-RP 3B', 'Success', '10.10.2.17', 'room: RM-101', 'room: RM-204'),
       a('2026-11-02 09:45', 'dept.cruz', 'Grades', 'StudentGrades', 'GEN-RP', 'APPROVE', 'Approved Final grades', 'Success', '10.10.5.3'),
-      a('2026-10-30 13:09', 'ict.admin', 'Roles', 'RolePermissions', 'FACULTY', 'UPDATE', 'Granted REPORT_GENERATE to FACULTY', 'Success', '10.10.1.5', '', 'REPORT_GENERATE')
+      a('2026-10-30 13:09', 'ict.admin', 'Roles', 'RolePermissions', 'FACULTY', 'UPDATE', 'Granted REPORT_GENERATE to FACULTY', 'Success', '10.10.1.5', 'REPORT_GENERATE: not granted', 'REPORT_GENERATE: granted')
     ];
     list.forEach((e, i) => { e.id = list.length - i; });
     return list;
@@ -191,10 +193,10 @@
   const seedBackups = () => ({
     config: { frequency: 'Daily', time: '02:00', type: 'Full', location: '/secure/backups/bits-sims', retention: 30, enabled: true },
     history: [
-      { id: 'BK-0021', type: 'Full', start: '2026-11-09 02:00', end: '2026-11-09 02:14', size: 1288490188, status: 'Completed', checksum: 'sha256:9f2c\u20268ab1', by: 'SYSTEM', restoreTested: '2026-11-01', failure: '' },
+      { id: 'BK-0021', type: 'Full', start: '2026-11-09 02:00', end: '2026-11-09 02:14', size: 1288490188, status: 'Completed', checksum: 'sha256:9f2c\u20268ab1', by: 'SYSTEM', restoreTested: '', failure: '' },
       { id: 'BK-0020', type: 'Full', start: '2026-11-08 02:00', end: '2026-11-08 02:13', size: 1277098598, status: 'Completed', checksum: 'sha256:41ad\u20260e77', by: 'SYSTEM', restoreTested: '', failure: '' },
       { id: 'BK-0019', type: 'Full', start: '2026-11-07 02:00', end: '2026-11-07 02:02', size: 0, status: 'Failed', checksum: '', by: 'SYSTEM', restoreTested: '', failure: 'Storage volume unreachable (timeout after 120 s).' },
-      { id: 'BK-0018', type: 'Full', start: '2026-11-06 02:00', end: '2026-11-06 02:12', size: 1265401702, status: 'Completed', checksum: 'sha256:c7e5\u2026b310', by: 'SYSTEM', restoreTested: '', failure: '' },
+      { id: 'BK-0018', type: 'Full', start: '2026-11-06 02:00', end: '2026-11-06 02:12', size: 1265401702, status: 'Completed', checksum: 'sha256:c7e5\u2026b310', by: 'SYSTEM', restoreTested: '2026-11-06', failure: '' },
       { id: 'BK-0017', type: 'Full', start: '2026-11-05 02:00', end: '2026-11-05 02:13', size: 1259292835, status: 'Completed', checksum: 'sha256:7d10\u2026f2c9', by: 'SYSTEM', restoreTested: '', failure: '' },
       { id: 'BK-0016', type: 'Full', start: '2026-11-04 14:30', end: '2026-11-04 14:44', size: 1250819481, status: 'Completed', checksum: 'sha256:aa83\u20263d5e', by: 'ict.admin', restoreTested: '', failure: '' }
     ]
@@ -204,7 +206,7 @@
     { id: 'EV-0104', ts: '2026-11-09 07:58', type: 'Performance Alert', module: 'Reports', desc: 'Report generation queue exceeded 8 s average.', severity: 'Warning', status: 'Investigating', by: '', resolved: '' },
     { id: 'EV-0103', ts: '2026-11-08 22:40', type: 'Database Issue', module: 'Attendance', desc: 'Slow query on AttendanceRecords (3.1 s).', severity: 'Error', status: 'Open', by: '', resolved: '' },
     { id: 'EV-0102', ts: '2026-11-07 02:02', type: 'Application Error', module: 'Backup', desc: 'Scheduled backup BK-0019 failed: storage unreachable.', severity: 'Critical', status: 'Resolved', by: 'ict.admin', resolved: '2026-11-07 09:30' },
-    { id: 'EV-0101', ts: '2026-11-05 11:31', type: 'Server Warning', module: 'Authentication', desc: 'Repeated failed logins for faculty.lim (5).', severity: 'Warning', status: 'Resolved', by: 'edtech.staff', resolved: '2026-11-05 11:50' },
+    { id: 'EV-0101', ts: '2026-11-05 11:31', type: 'Server Warning', module: 'Authentication', desc: 'Repeated failed logins for faculty.lim (5).', severity: 'Warning', status: 'Resolved', by: 'ict.admin', resolved: '2026-11-05 11:50' },
     { id: 'EV-0100', ts: '2026-11-03 08:15', type: 'Performance Alert', module: 'Enrollment', desc: 'Peak enrollment load: 1,040 concurrent sessions.', severity: 'Information', status: 'Resolved', by: 'ict.admin', resolved: '2026-11-03 10:00' }
   ];
 
@@ -272,7 +274,7 @@
   }
 
   const seedPolicy = () => ({ maxFailed: 5, lockMin: 15, minPw: 8, timeoutMin: 20 });
-  const seedAlertCfg = () => ({ maxAbsences: 3, tardiness: 3, notifyFaculty: true, notifyRegistrar: false, enabled: true });
+  const seedAlertCfg = () => ({ maxAbsences: 3, tardiness: 3, enabled: true });
 
   /* =====================================================
      STATE
@@ -321,8 +323,13 @@
   const can = (cap) => me && CAPS[me.role].includes(cap);
   const userName = (username) => { const u = db.users.find((x) => x.username === username); return u ? u.name : username; };
 
+  // Sample workstation IPs per role (shown in the audit trail)
+  const ROLE_IP = { ICT_ADMIN: '10.10.1.5', EDTECH: '10.10.2.17', FACULTY: '10.10.3.40', REGISTRAR: '10.10.4.8', DEPT_HEAD: '10.10.5.3', STUDENT: '10.10.6.21' };
+  const ipFor = (username) => { const u = db.users.find((x) => x.username === username); return (u && ROLE_IP[u.role]) || '10.10.1.24'; };
+  // Login accounts are always recorded by username in the audit trail
+  const userRec = (ent, rec) => { if (ent !== 'Users') return rec; const m = /^U-(\d+)$/.exec(String(rec)); const u = m && db.users.find((x) => x.id === Number(m[1])); return u ? u.username : rec; };
   function audit(mod, ent, rec, act, desc, status, prev, next) {
-    db.audit.unshift({ id: (db.audit[0] ? db.audit[0].id : 0) + 1, ts: nowStamp(), user: me ? me.username : 'SYSTEM', mod, ent, rec, act, desc, status: status || 'Success', ip: '10.10.' + (me ? (me.role === 'ICT_ADMIN' ? '1.5' : me.role === 'EDTECH' ? '2.17' : me.role === 'DEPT_HEAD' ? '5.3' : '3.40') : '0.1'), prev: prev || '', next: next || '' });
+    db.audit.unshift({ id: (db.audit[0] ? db.audit[0].id : 0) + 1, ts: nowStamp(), user: me ? me.username : 'SYSTEM', mod, ent, rec: userRec(ent, rec), act, desc, status: status || 'Success', ip: me ? ipFor(me.username) : '10.10.1.24', prev: prev || '', next: next || '' });
     if (db.audit.length > 300) db.audit.length = 300;
     save('audit');
   }
@@ -512,8 +519,8 @@
   const opts = (list, sel, all) => (all ? `<option value="all">${esc(all)}</option>` : '') + list.map(([v, t]) => `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(t)}</option>`).join('');
   const field = (id, label, input, hint) => `<div class="set-field"><label for="${id}">${esc(label)}</label>${input}${hint ? `<small class="set-hint">${esc(hint)}</small>` : ''}<small class="set-error" id="${id}Error"></small></div>`;
   const setErr = (id, msg) => { const e = $('#' + id + 'Error'); if (e) e.textContent = msg || ''; const i = $('#' + id); if (i) i.setAttribute('aria-invalid', msg ? 'true' : 'false'); };
-  const recentAudit = (n, full) => table(full ? ['Time', 'User', 'Action', 'Description', 'Status'] : ['Time', 'Action', 'Description', 'Status'],
-    db.audit.slice(0, n).map((a) => `<tr><td>${esc(a.ts)}</td>${full ? `<td>${esc(a.user)}</td>` : ''}<td>${esc(a.act)}</td><td>${esc(a.desc)}</td><td>${badge(a.status)}</td></tr>`));
+  const recentAudit = (n, full, id) => table(full ? ['Time', 'User', 'Action', 'Description', 'Status'] : ['Time', 'Action', 'Description', 'Status'],
+    db.audit.slice(0, n).map((a) => `<tr><td>${esc(fmtStamp(a.ts))}</td>${full ? `<td>${esc(a.user)}</td>` : ''}<td>${esc(a.act)}</td><td>${esc(a.desc)}</td><td>${badge(a.status)}</td></tr>`), undefined, id);
 
   /* =====================================================
      MONITORING DATA (simulated)
@@ -580,11 +587,11 @@
         <div class="staff-stats">
           ${stat('TOTAL ACCOUNTS', u.length, `${u.filter((x) => x.status === 'Active').length} active`)}
           ${stat('NEED ATTENTION', u.filter((x) => ['Locked', 'Suspended', 'Pending Activation'].includes(x.status)).length, 'Locked, suspended or pending')}
-          ${stat('OPEN SYSTEM EVENTS', db.events.filter((e) => e.status !== 'Resolved').length, `System health: ${healthSummary()}`)}
+          ${(() => { const open = db.events.filter((e) => e.status !== 'Resolved'), bad = open.filter((e) => ['Error', 'Critical'].includes(e.severity)).length; return stat('OPEN SYSTEM EVENTS', open.length, bad ? `Needs attention: ${bad} error${bad === 1 ? '' : 's'} open` : `System health: ${healthSummary()}`); })()}
           ${stat('LAST GOOD BACKUP', last ? fmtDate(last.end) : '\u2014', last ? `${last.id} \u00B7 ${fmtBytes(last.size)}` : 'No completed backup', 'is-blue')}
         </div>
         <div class="staff-split">
-          ${card('Recent activity', recentAudit(7, true))}
+          ${card('Recent activity', recentAudit(7, true, 'dashRecent'))}
           <div class="staff-stack">
             ${card('Quick actions', `<div class="staff-quick">
               <button type="button" class="btn-solid" data-act="acct-add">+ New account</button>
@@ -651,7 +658,7 @@
         </div>
         <div class="staff-stack">
           ${card('To do', `<ul class="staff-list">${attTasks.map((c) => `<li><div><strong>Submit attendance</strong><small>${esc(c.code)} ${esc(c.section)} \u00B7 ${fmtDate(meetingDates(c)[0])}</small></div><button type="button" class="btn-light btn-sm" data-act="att-open" data-id="${c.id}">Open</button></li>`).join('')}${gradeTasks.map(([c, p]) => `<li><div><strong>Submit ${esc(p)} grades</strong><small>${esc(c.code)} ${esc(c.section)}</small></div><button type="button" class="btn-light btn-sm" data-act="gr-open" data-id="${c.id}" data-period="${p}">Open</button></li>`).join('')}</ul>${attTasks.length + gradeTasks.length ? '' : '<p class="dm-modal-note">You\u2019re all caught up.</p>'}`)}
-          ${card('Attendance alerts', db.fac.alerts.length ? `<ul class="staff-list">${db.fac.alerts.slice(0, 5).map((a) => `<li><div><strong>${esc(a.student)}</strong><small>${esc(a.message)}</small></div>${badge(a.type === 'Absence' ? 'Absent' : 'Late')}</li>`).join('')}</ul>` : '<p class="dm-modal-note">No students have crossed an alert threshold.</p>')}
+          ${(() => { const mine = db.fac.alerts.filter((a) => cls.some((c) => c.id === a.cls)); return card('Attendance alerts', mine.length ? `<ul class="staff-list">${mine.slice(0, 5).map((a) => `<li><div><strong>${esc(a.student)}</strong><small>${esc(a.message)}</small></div>${badge(a.type === 'Absence' ? 'Absent' : 'Late')}</li>`).join('')}</ul>` : '<p class="dm-modal-note">No students have crossed an alert threshold.</p>'); })()}
         </div>
       </div>`;
   };
@@ -678,7 +685,7 @@
     const list = db.users.filter((u) => (ui.acct.status === 'all' || u.status === ui.acct.status) && (ui.acct.role === 'all' || u.role === ui.acct.role) &&
       (!q || [u.name, u.username, u.email].some((v) => v.toLowerCase().includes(q))));
     const maskEmail = (e) => e.replace(/^(.).*(@.*)$/, '$1\u2022\u2022\u2022$2');
-    const cols = full ? ['Account', 'Role', 'Status', 'MFA', 'Failed logins', 'Last login', 'Actions'] : ['Account', 'Status', 'Failed logins', 'Last login', 'Actions'];
+    const cols = full ? ['Account', 'Role', 'Status', 'Failed logins', 'Last login', 'Actions'] : ['Account', 'Status', 'Failed logins', 'Last login', 'Actions'];
     const rows = list.map((u) => {
       const self = u.username === me.username;
       const protectedAcct = !full && u.role === 'ICT_ADMIN';
@@ -689,10 +696,10 @@
            ${self ? '' : `<button type="button" class="btn-light btn-sm" data-act="acct-toggle" data-id="${u.id}">${u.status === 'Suspended' ? 'Reactivate' : 'Suspend'}</button>`}`
         : (protectedAcct ? '<small>Restricted</small>' : `${u.status === 'Locked' ? `<button type="button" class="btn-solid btn-sm" data-act="acct-unlock" data-id="${u.id}">Unlock</button>` : ''}<button type="button" class="btn-light btn-sm" data-act="acct-reset" data-id="${u.id}">Send reset code</button>`);
       return full
-        ? `<tr><td><strong>${esc(u.name)}</strong><br><small>${esc(u.username)} \u00B7 ${esc(u.email)}</small></td><td>${esc(ROLE_LABEL[u.role])}</td><td>${badge(u.status)}</td><td>${u.mfa ? 'On' : 'Off'}</td><td>${u.failed}</td><td>${esc(u.lastLogin || 'Never')}</td><td class="staff-actions">${acts}</td></tr>`
-        : `<tr><td><strong>${esc(u.name)}</strong><br><small>${esc(u.username)} \u00B7 ${esc(maskEmail(u.email))}</small></td><td>${badge(u.status)}</td><td>${u.failed}</td><td>${esc(u.lastLogin || 'Never')}</td><td class="staff-actions">${acts}</td></tr>`;
+        ? `<tr><td><strong>${esc(u.name)}</strong><br><small>${esc(u.username)} \u00B7 ${esc(u.email)}</small></td><td>${esc(ROLE_LABEL[u.role])}</td><td>${badge(u.status)}</td><td>${u.failed}</td><td>${esc(u.lastLogin ? fmtStamp(u.lastLogin) : 'Never')}</td><td class="staff-actions">${acts}</td></tr>`
+        : `<tr><td><strong>${esc(u.name)}</strong><br><small>${esc(u.username)} \u00B7 ${esc(maskEmail(u.email))}</small></td><td>${badge(u.status)}</td><td>${u.failed}</td><td>${esc(u.lastLogin ? fmtStamp(u.lastLogin) : 'Never')}</td><td class="staff-actions">${acts}</td></tr>`;
     });
-    $('#acctTable').innerHTML = table(cols, rows, 'No accounts match your filters.');
+    $('#acctTable').innerHTML = table(cols, rows, 'No accounts match your filters.', 'acctList');
   }
 
   function accountForm(u) {
@@ -706,7 +713,6 @@
         ${field('afRole', 'Role', `<select id="afRole" class="dm-select">${opts(ROLE_ORDER.map((r) => [r, ROLE_LABEL[r]]), u ? u.role : 'FACULTY')}</select>`)}
         ${field('afStatus', 'Account status', `<select id="afStatus" class="dm-select">${opts(['Pending Activation', 'Active', 'Inactive', 'Suspended', 'Locked'].map((s) => [s, s]), u ? u.status : 'Pending Activation')}</select>`)}
       </div>
-      <label class="check-row staff-check"><input type="checkbox" id="afMfa" ${u && u.mfa ? 'checked' : ''}/><span>Require multi-factor authentication</span></label>
       <label class="check-row staff-check"><input type="checkbox" id="afMust" ${!u || u.mustChange ? 'checked' : ''}/><span>Require a password change at next login</span></label>
     </form>`;
   }
@@ -727,13 +733,13 @@
 
     if (u) {
       const before = `${u.role}/${u.status}`;
-      Object.assign(u, { name, username, email, role, status, mfa: $('#afMfa').checked, mustChange: $('#afMust').checked });
+      Object.assign(u, { name, username, email, role, status, mustChange: $('#afMust').checked });
       if (status !== 'Locked') { u.failed = 0; u.lockoutUntil = ''; }
       audit('User Accounts', 'Users', 'U-' + u.id, 'UPDATE', `Updated account ${username}`, 'Success', before, `${role}/${status}`);
       toast('Account updated.');
     } else {
       const id = Math.max(0, ...db.users.map((x) => x.id)) + 1;
-      db.users.push({ id, username, name, email, role, status, mfa: $('#afMfa').checked, failed: 0, lockoutUntil: '', lastLogin: '', mustChange: $('#afMust').checked, created: isoDate(new Date()) });
+      db.users.push({ id, username, name, email, role, status, failed: 0, lockoutUntil: '', lastLogin: '', mustChange: $('#afMust').checked, created: isoDate(new Date()) });
       audit('User Accounts', 'Users', 'U-' + id, 'CREATE', `Created account ${username} (${ROLE_LABEL[role]})`);
       toast(`Account ${username} created.`);
     }
@@ -761,11 +767,11 @@
       rows.push(`<tr class="staff-group"><td colspan="${ROLE_ORDER.length + 1}">${esc(g)}</td></tr>`);
       PERMISSIONS.filter((p) => p[1] === g).forEach(([code]) => rows.push(`<tr><td><code>${code}</code></td>${ROLE_ORDER.map((r) => `<td class="num"><input type="checkbox" data-perm="${r}|${code}" ${perms[r].includes(code) ? 'checked' : ''} ${edit ? '' : 'disabled'} aria-label="${code} for ${esc(ROLE_LABEL[r])}" /></td>`).join('')}</tr>`));
     });
-    return `${head('Roles & Permissions', edit ? 'Decide which actions each role may perform. The server must enforce these; hiding a button is not access control.' : 'Read-only view of what each role may do. Only ICT Services can change roles and permissions.',
+    return `${head('Roles & Permissions', edit ? 'Decide which actions each role may perform. Changes take effect after you save and are recorded in the audit trail.' : 'Read-only view of what each role may do. Only ICT Services can change roles and permissions.',
       edit ? `<span class="staff-quick"><button type="button" class="btn-light" data-act="roles-discard">Discard</button><button type="button" class="btn-solid" data-act="roles-save" ${rolesDraft ? '' : 'disabled'}>Save changes</button></span>` : '')}
-      <div class="staff-stats">${['ICT_ADMIN', 'EDTECH', 'FACULTY', 'REGISTRAR'].map((r) => stat(ROLE_LABEL[r].toUpperCase(), db.users.filter((u) => u.role === r).length, `${perms[r].length} permissions`)).join('')}</div>
+      <div class="staff-stats staff-stats-6">${ROLE_ORDER.map((r) => { const n = db.users.filter((u) => u.role === r).length; return stat(ROLE_LABEL[r].toUpperCase(), `${perms[r].length}<small> permissions</small>`, `${n} account${n === 1 ? '' : 's'}`); }).join('')}</div>
       ${card('Permission matrix', `<div class="dm-table-wrap staff-table-wrap"><table class="dm-table staff-table staff-matrix"><thead><tr><th>Permission</th>${ROLE_ORDER.map((r) => `<th class="num">${esc(ROLE_LABEL[r])}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>
-        <p class="dm-foot">Student is an optional self-service role with tightly limited access to its own records.</p>`)}`;
+        <p class="dm-foot">Students only ever see their own records.</p>`)}`;
   };
 
   /* ---------- AUDIT TRAILS ---------- */
@@ -790,8 +796,8 @@
     const list = auditRows();
     const cols = full ? ['Time', 'User', 'Module', 'Entity / record', 'Action', 'Description', 'Changes', 'IP', 'Result'] : ['Time', 'User', 'Module', 'Action', 'Description', 'Result'];
     $('#auTable').innerHTML = table(cols, list.slice(0, 100).map((a) => full
-      ? `<tr><td>${esc(a.ts)}</td><td>${esc(a.user)}</td><td>${esc(a.mod)}</td><td>${esc(a.ent)}<br><small>${esc(a.rec)}</small></td><td>${esc(a.act)}</td><td>${esc(a.desc)}</td><td>${a.prev || a.next ? `<small>${esc(a.prev)}<br>\u2192 ${esc(a.next)}</small>` : '\u2014'}</td><td>${esc(a.ip || '\u2014')}</td><td>${badge(a.status)}</td></tr>`
-      : `<tr><td>${esc(a.ts)}</td><td>${esc(a.user)}</td><td>${esc(a.mod)}</td><td>${esc(a.act)}</td><td>${esc(a.desc)}</td><td>${badge(a.status)}</td></tr>`), 'No audit events match.');
+      ? `<tr><td>${esc(fmtStamp(a.ts))}</td><td>${esc(a.user)}</td><td>${esc(a.mod)}</td><td>${esc(a.ent)}<br><small>${esc(a.rec)}</small></td><td>${esc(a.act)}</td><td>${esc(a.desc)}</td><td>${a.prev || a.next ? `<small>${esc(a.prev)}<br>\u2192 ${esc(a.next)}</small>` : '\u2014'}</td><td>${esc(a.ip || '\u2014')}</td><td>${badge(a.status)}</td></tr>`
+      : `<tr><td>${esc(fmtStamp(a.ts))}</td><td>${esc(a.user)}</td><td>${esc(a.mod)}</td><td>${esc(a.act)}</td><td>${esc(a.desc)}</td><td>${badge(a.status)}</td></tr>`), 'No audit events match.');
   }
 
   /* ---------- BACKUPS ---------- */
@@ -799,7 +805,7 @@
     const full = can('backup.manage');
     const b = db.backups, c = b.config;
     const lastOk = b.history.find((h) => h.status === 'Completed');
-    const tested = b.history.find((h) => h.restoreTested);
+    const tested = b.history.filter((h) => h.restoreTested).sort((x, y) => y.restoreTested.localeCompare(x.restoreTested))[0];
     const cfgCard = full ? card('Backup schedule', `<form id="bkForm" class="staff-form" novalidate>
         <div class="set-grid-2">
           ${field('bkFreq', 'Frequency', `<select id="bkFreq" class="dm-select">${opts(['Daily', 'Weekly', 'Monthly'].map((x) => [x, x]), c.frequency)}</select>`)}
@@ -818,11 +824,11 @@
         ${stat('FAILED (LAST 30 DAYS)', b.history.filter((h) => h.status === 'Failed').length, 'Review the failure reason')}
         ${stat('SCHEDULE', c.enabled ? c.frequency : 'Off', `${c.type} \u00B7 ${fmtTime(c.time)}`, 'is-blue')}
       </div>
-      <div class="staff-split">
-        ${card('Backup history', table(full ? ['ID', 'Started', 'Type', 'Size', 'Checksum', 'Status', 'Restore test', ''] : ['ID', 'Started', 'Type', 'Status'],
+      <div class="staff-stack">
+        ${card('Backup history', table(full ? ['ID', 'Started', 'Type', 'Size / checksum', 'Status', 'Restore test', ''] : ['ID', 'Started', 'Type', 'Status'],
           b.history.map((h) => full
-            ? `<tr><td>${esc(h.id)}</td><td>${esc(h.start)}<br><small>by ${esc(h.by)}</small></td><td>${esc(h.type)}</td><td>${h.size ? fmtBytes(h.size) : '\u2014'}</td><td><small>${esc(h.checksum || '\u2014')}</small></td><td>${badge(h.status)}${h.failure ? `<br><small class="dm-note">${esc(h.failure)}</small>` : ''}</td><td>${h.restoreTested ? fmtDate(h.restoreTested) : '\u2014'}</td><td>${h.status === 'Completed' ? `<button type="button" class="btn-light btn-sm" data-act="bk-verify" data-id="${h.id}">Test restore</button>` : ''}</td></tr>`
-            : `<tr><td>${esc(h.id)}</td><td>${esc(h.start)}</td><td>${esc(h.type)}</td><td>${badge(h.status)}</td></tr>`)))}
+            ? `<tr><td>${esc(h.id)}</td><td>${esc(fmtStamp(h.start))}<br><small>by ${esc(h.by)}</small></td><td>${esc(h.type)}</td><td>${h.size ? fmtBytes(h.size) : '\u2014'}${h.checksum ? `<br><small>${esc(h.checksum)}</small>` : ''}</td><td>${badge(h.status)}${h.failure ? `<br><small class="dm-note">${esc(h.failure)}</small>` : ''}</td><td>${h.restoreTested ? fmtDate(h.restoreTested) : '\u2014'}</td><td class="staff-actions">${h.status === 'Completed' ? `<button type="button" class="btn-light btn-sm" data-act="bk-verify" data-id="${h.id}">Test restore</button>` : ''}</td></tr>`
+            : `<tr><td>${esc(h.id)}</td><td>${esc(fmtStamp(h.start))}</td><td>${esc(h.type)}</td><td>${badge(h.status)}</td></tr>`), undefined, 'bkHist'))}
         ${cfgCard}
       </div>`;
   };
@@ -832,7 +838,7 @@
     tickMetrics();
     return `${head('System Monitoring', 'Live health indicators and the event log. Collected automatically; refreshes every few seconds.', '<button type="button" class="btn-light" data-act="mon-refresh">Refresh now</button>')}
       <div class="staff-metrics" id="stMetrics">${metricsHtml()}</div>
-      ${card('System events', table(['Event', 'Time', 'Module', 'Description', 'Severity', 'Status', ''], db.events.map((e) => `<tr><td>${esc(e.id)}<br><small>${esc(e.type)}</small></td><td>${esc(e.ts)}</td><td>${esc(e.module)}</td><td>${esc(e.desc)}${e.resolved ? `<br><small>Resolved ${esc(e.resolved)} by ${esc(e.by)}</small>` : ''}</td><td>${badge(e.severity)}</td><td>${badge(e.status)}</td><td>${e.status === 'Resolved' ? '' : `<button type="button" class="btn-light btn-sm" data-act="mon-resolve" data-id="${e.id}">Mark resolved</button>`}</td></tr>`)))}`;
+      ${card('System events', table(['Event', 'Time', 'Module', 'Description', 'Severity', 'Status', ''], db.events.map((e) => `<tr><td>${esc(e.id)}<br><small>${esc(e.type)}</small></td><td>${esc(fmtStamp(e.ts))}</td><td>${esc(e.module)}</td><td>${esc(e.desc)}${e.resolved ? `<br><small>Resolved ${esc(fmtStamp(e.resolved))} by ${esc(e.by)}</small>` : ''}</td><td>${badge(e.severity)}</td><td>${badge(e.status)}</td><td>${e.status === 'Resolved' ? '' : `<button type="button" class="btn-light btn-sm" data-act="mon-resolve" data-id="${e.id}">Mark resolved</button>`}</td></tr>`)))}`;
   };
 
   /* ---------- CLASSES (EdTech: all classes, editable; Faculty: assigned only) ---------- */
@@ -1041,7 +1047,7 @@
   const attPct = (cid, sn) => { let held = 0, att = 0, exc = 0; Object.values(db.fac.attendance[cid] || {}).forEach((s) => { if (s.status !== 'Submitted' || !s.rows[sn]) return; const st = s.rows[sn].status; held++; if (st === 'Excused') exc++; else if (st !== 'Absent') att++; }); const base = held - exc; return { held, att, pct: base ? (att / base) * 100 : 0 }; };
   const inRange = (ts) => { const d = String(ts).slice(0, 10); return (!ui.rep.from || d >= ui.rep.from) && (!ui.rep.to || d <= ui.rep.to); };
   const REPORTS = [
-    { id: 'users', name: 'User Accounts Report', roles: ['ICT_ADMIN'], filters: [], build: () => ({ cols: ['Username', 'Name', 'Email', 'Role', 'Status', 'MFA', 'Failed logins', 'Last login'], rows: db.users.map((u) => [u.username, u.name, u.email, ROLE_LABEL[u.role], u.status, u.mfa ? 'On' : 'Off', u.failed, u.lastLogin || 'Never']) }) },
+    { id: 'users', name: 'User Accounts Report', roles: ['ICT_ADMIN'], filters: [], build: () => ({ cols: ['Username', 'Name', 'Email', 'Role', 'Status', 'Failed logins', 'Last login'], rows: db.users.map((u) => [u.username, u.name, u.email, ROLE_LABEL[u.role], u.status, u.failed, u.lastLogin ? fmtStamp(u.lastLogin) : 'Never']) }) },
     { id: 'roles', name: 'Role Assignment Report', roles: ['ICT_ADMIN'], filters: [], build: () => ({ cols: ['Role', 'Users assigned', 'Permissions granted'], rows: ROLE_ORDER.map((r) => [ROLE_LABEL[r], db.users.filter((u) => u.role === r).length, db.perms[r].join(', ')]) }) },
     { id: 'audit', name: 'Audit Activity Report', roles: ['ICT_ADMIN'], filters: ['range'], build: () => ({ cols: ['Time', 'User', 'Module', 'Action', 'Description', 'Result'], rows: db.audit.filter((a) => inRange(a.ts)).map((a) => [a.ts, a.user, a.mod, a.act, a.desc, a.status]) }) },
     { id: 'backups', name: 'Backup History Report', roles: ['ICT_ADMIN'], filters: ['range'], build: () => ({ cols: ['ID', 'Started', 'Type', 'Size', 'Status', 'Restore tested'], rows: db.backups.history.filter((b) => inRange(b.start)).map((b) => [b.id, b.start, b.type, b.size ? fmtBytes(b.size) : '\u2014', b.status, b.restoreTested || '\u2014']) }) },
@@ -1182,7 +1188,7 @@
 
   // Write to the shared audit trail on behalf of another portal (e.g. the Registrar)
   function record(user, mod, ent, rec, act, desc, status, prev, next) {
-    db.audit.unshift({ id: (db.audit[0] ? db.audit[0].id : 0) + 1, ts: nowStamp(), user, mod, ent, rec, act, desc, status: status || 'Success', ip: '10.10.4.8', prev: prev || '', next: next || '' });
+    db.audit.unshift({ id: (db.audit[0] ? db.audit[0].id : 0) + 1, ts: nowStamp(), user, mod, ent, rec: userRec(ent, rec), act, desc, status: status || 'Success', ip: ipFor(user), prev: prev || '', next: next || '' });
     if (db.audit.length > 300) db.audit.length = 300;
     save('audit');
   }
@@ -1456,7 +1462,7 @@
             ${field('plFail', 'Failed logins before lockout', `<input id="plFail" type="number" min="3" max="10" value="${p.maxFailed}" />`)}
             ${field('plLock', 'Lockout duration (minutes)', `<input id="plLock" type="number" min="1" max="1440" value="${p.lockMin}" />`)}
             ${field('plMin', 'Minimum password length', `<input id="plMin" type="number" min="8" max="64" value="${p.minPw}" />`)}
-            ${field('plIdle', 'Session timeout (minutes)', `<input id="plIdle" type="number" min="5" max="240" value="${p.timeoutMin}" />`, 'Staff are signed out after this much inactivity.')}
+            ${field('plIdle', 'Session timeout (minutes)', `<input id="plIdle" type="number" min="5" max="240" value="${p.timeoutMin}" />`, 'Everyone (students and staff) is signed out after this much inactivity.')}
           </div>
           <div class="set-actions"><button type="submit" class="btn-solid">Save policy</button></div>
         </form>
@@ -1466,10 +1472,8 @@
             ${field('alAbs', 'Absences before an alert', `<input id="alAbs" type="number" min="1" max="20" value="${a.maxAbsences}" />`)}
             ${field('alLate', 'Late arrivals before an alert', `<input id="alLate" type="number" min="1" max="20" value="${a.tardiness}" />`)}
           </div>
-          <label class="check-row staff-check"><input type="checkbox" id="alF" ${a.notifyFaculty ? 'checked' : ''}/><span>Notify faculty</span></label>
-          <label class="check-row staff-check"><input type="checkbox" id="alR" ${a.notifyRegistrar ? 'checked' : ''}/><span>Notify Registrar</span></label>
           <label class="check-row staff-check"><input type="checkbox" id="alOn" ${a.enabled ? 'checked' : ''}/><span>Alert rules enabled</span></label>
-          <p class="dm-foot">Which recipients and thresholds apply is a school decision; these are starting values.</p>
+          <p class="dm-foot">Students get a warning on their Attendance page, faculty see alerts for their own classes and the Department Head sees all of them. The absence and tardiness reports use the same limits.</p>
           <div class="set-actions"><button type="submit" class="btn-solid">Save alert rules</button></div>
         </form>
       </div>`;
@@ -1669,7 +1673,7 @@
       if (!ok) return;
       db.policy = v; save('policy'); audit('System', 'SystemConfiguration', 'SECURITY', 'UPDATE', 'Updated security policy', 'Success', '', JSON.stringify(v)); toast('Security policy saved.');
     } else if (id === 'alForm' && can('config')) {
-      const v = { maxAbsences: Number($('#alAbs').value), tardiness: Number($('#alLate').value), notifyFaculty: $('#alF').checked, notifyRegistrar: $('#alR').checked, enabled: $('#alOn').checked };
+      const v = { maxAbsences: Number($('#alAbs').value), tardiness: Number($('#alLate').value), enabled: $('#alOn').checked };
       ['alAbs', 'alLate'].forEach((i) => setErr(i, ''));
       if (!(v.maxAbsences >= 1)) { setErr('alAbs', 'Enter 1 or more.'); return; }
       if (!(v.tardiness >= 1)) { setErr('alLate', 'Enter 1 or more.'); return; }

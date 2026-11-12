@@ -3014,3 +3014,9 @@ form.dash-card.set-card:hover {
 /* Profile: note under Save / Cancel */
 .general-note { display: block; margin-left: 0.5rem; font-size: 0.68rem; line-height: 1.35; color: rgba(255, 255, 255, 0.85); }
 .general-grid input[readonly] { opacity: 0.8; cursor: default; }
+/* Student attendance warning */
+.att-warn { border-left: 4px solid #c0392b; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+.att-warn h3 { margin: 0 0 0.4rem; font-size: 1rem; color: #a5281b; }
+.att-warn ul { margin: 0 0 0.5rem 1.1rem; padding: 0; }
+.att-warn li { margin: 0.15rem 0; }
+.att-warn p { margin: 0; font-size: 0.85rem; color: #4a5a6a; }

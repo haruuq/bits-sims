@@ -57,7 +57,7 @@
   // ICT's security policy (System Settings) applies to everyone
   function policy() {
     const p = rd('bits-sims-staff-policy', {}) || {};
-    return { maxFailed: p.maxFailed || 5, lockMin: p.lockMin || 15, minPw: p.minPw || 8 };
+    return { maxFailed: p.maxFailed || 5, lockMin: p.lockMin || 15, minPw: p.minPw || 8, timeoutMin: p.timeoutMin || 20 };
   }
 
   function audit(username, act, desc, status) {
@@ -182,6 +182,21 @@
     return { ok: true };
   }
 
+  /* ---------- Idle sign-out (same timeout as the staff portal) ---------- */
+  let stopIdleFn = null;
+  function stopIdle() { if (stopIdleFn) { stopIdleFn(); stopIdleFn = null; } }
+  function watchIdle(onTimeout) {
+    stopIdle();
+    let last = Date.now();
+    const mark = () => { last = Date.now(); };
+    const evs = ['click', 'keydown', 'mousemove'];
+    evs.forEach((ev) => document.addEventListener(ev, mark, { passive: true }));
+    const timer = setInterval(() => {
+      if (Date.now() - last > policy().timeoutMin * 60000) { stopIdle(); onTimeout(); window.alert('You were signed out after a period of inactivity.'); }
+    }, 15000);
+    stopIdleFn = () => { clearInterval(timer); evs.forEach((ev) => document.removeEventListener(ev, mark)); };
+  }
+
   window.SIMSAuth = {
     GENERIC,
     policy,
@@ -191,6 +206,8 @@
     setPassword: setOwnPassword,               // Students and Registrar only
     requestReset,
     completeReset,
+    watchIdle,                                 // Students and Registrar (staff.js has its own)
+    stopIdle,
     reset() { Object.values(KEY).forEach((k) => localStorage.removeItem(k)); }
   };
 })();

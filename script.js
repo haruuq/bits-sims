@@ -103,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (account.role === 'STUDENT') {
       studentAccount = account;
       dashboardView.classList.remove('hidden');
+      SIMSAuth.watchIdle(() => logoutBtn && logoutBtn.click());
     } else if (account.role === 'REGISTRAR') {
       persistProfile(); persistDocs(); persistAdm(); // make sure the Registrar sees the student's stores
       SIMSRegistrar.open(account);
@@ -244,6 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (logoutBtn) {
     logoutBtn.addEventListener('click', (e) => {
       e.preventDefault();
+      SIMSAuth.stopIdle();
       loginForm.reset();
       dashboardView.classList.add('hidden');
       loginView.classList.remove('hidden');
@@ -2809,7 +2811,25 @@ document.addEventListener('DOMContentLoaded', () => {
   let attSort = { key: null, dir: 1 };
   const attOpen = new Set();
 
+  // Warning when a course reaches the absence/tardiness limits set by ICT Services
+  function renderAttWarn() {
+    const box = $('#attWarn'); if (!box) return;
+    const cfg = window.SIMSStaff && SIMSStaff.alertConfig ? SIMSStaff.alertConfig() : null;
+    if (!cfg || !cfg.enabled) { box.innerHTML = ''; return; }
+    const hits = [];
+    attRows.forEach((r) => {
+      if (r.absent >= cfg.maxAbsences) hits.push(`<li><strong>${esc(r.code)}</strong>: ${r.absent} absence${r.absent === 1 ? '' : 's'} (limit ${cfg.maxAbsences})</li>`);
+      if (r.late >= cfg.tardiness) hits.push(`<li><strong>${esc(r.code)}</strong>: ${r.late} late arrival${r.late === 1 ? '' : 's'} (limit ${cfg.tardiness})</li>`);
+    });
+    box.innerHTML = hits.length ? `<section class="dash-card dm-card att-warn">
+        <h3>Attendance warning</h3>
+        <ul>${hits.join('')}</ul>
+        <p>Your instructor and the Department Head have been notified. Talk to your instructor if a record looks wrong or you need to explain an absence.</p>
+      </section>` : '';
+  }
+
   function renderAttendance() {
+    renderAttWarn();
     const rows = [...attRows];
     if (attSort.key) {
       rows.sort((a, b) => {

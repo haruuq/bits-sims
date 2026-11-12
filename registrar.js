@@ -580,11 +580,13 @@
     acct = account; page = 'home'; sel = null; fl = { q: '', st: '' }; tab = 'Overview'; rtab = 'Student Records'; mtab = 'Applications';
     const root = $('#registrarView'); root.classList.remove('hidden'); bind(root);
     log('Successful login', 'Authentication', 'Users', acct.username, 'LOGIN');
+    SIMSAuth.watchIdle(close);
     render();
   }
 
   function close() {
     if (!acct) return;
+    SIMSAuth.stopIdle();
     log('Signed out', 'Authentication', 'Users', acct.username, 'LOGOUT');
     acct = null;
     const root = $('#registrarView'); root.classList.add('hidden'); root.innerHTML = '';
