@@ -490,6 +490,17 @@
   const badge = (s) => `<span class="dm-status ${STATUS_CLS[s] || 'muted'}">${esc(s)}</span>`;
   const head = (title, sub, extra) => `<header class="adm-head"><div><h2>${esc(title)}</h2><p>${esc(sub)}</p></div>${extra || ''}</header>`;
   const stat = (label, value, sub, tone) => `<div class="dash-card dm-card staff-stat ${tone || ''}"><span class="dm-stat-label">${esc(label)}</span><span class="dm-stat-value">${value}</span><span class="dm-stat-sub">${esc(sub || '')}</span></div>`;
+  // Password box with a Show/Hide button (same look as the student settings)
+  const pwInput = (id, ac) => `<div class="pw-wrap"><input id="${id}" type="password" autocomplete="${ac}" /><button type="button" class="pw-toggle" data-act="pw-toggle" data-target="${id}" aria-pressed="false" aria-label="Show password">Show</button></div>`;
+  // Dates shown to people: "Nov 12, 2026, 11:39 PM" (stored as YYYY-MM-DD HH:MM)
+  const fmtStamp = (ts) => {
+    if (!ts) return '\u2014';
+    const [d, t] = String(ts).split(' ');
+    const [y, m, day] = d.split('-').map(Number);
+    if (!t) return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const [h, mi] = t.split(':').map(Number);
+    return new Date(y, m - 1, day, h, mi).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  };
   const table = (cols, rows, empty, id) => `
     <div class="dm-table-wrap staff-table-wrap"><table class="dm-table staff-table" ${id ? `id="${id}"` : ''}>
       <thead><tr>${cols.map((c) => `<th scope="col">${c}</th>`).join('')}</tr></thead>
@@ -626,15 +637,15 @@
     cls.forEach((c) => PERIODS.forEach((p) => { if (db.fac.assessments.some((a) => a.classId === c.id && a.period === p) && ['Draft', 'Returned'].includes(db.fac.gradeStatus[`${c.id}|${p}`] || 'Draft')) gradeTasks.push([c, p]); }));
     return `${head(`Welcome back, ${me.name.split(' ')[0]}`, `${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} \u00B7 1st Semester, AY 2026\u20132027`)}
       <div class="staff-stats">
-        ${stat('ASSIGNED CLASSES', cls.length, `${cls.reduce((n, c) => n + c.size, 0)} students in total`)}
+        ${stat('ASSIGNED CLASSES', cls.length, `${cls.length ? ROSTER.length : 0} students \u00B7 ${cls.reduce((n, c) => n + c.size, 0)} class enrollments`)}
         ${stat('CLASSES TODAY', todays.length, todays.length ? todays.map((c) => c.code).join(', ') : 'No class meetings today')}
         ${stat('ATTENDANCE TO SUBMIT', attTasks.length, 'Latest meeting not yet submitted')}
-        ${stat('GRADES TO SUBMIT', gradeTasks.length, 'Periods still in draft', 'is-blue')}
+        ${stat('GRADES TO SUBMIT', gradeTasks.length, 'Grade sheets still in draft', 'is-blue')}
       </div>
       <div class="staff-split">
         <div class="staff-stack">
           ${card('Today\u2019s schedule', todays.length ? `<ul class="staff-list">${todays.map((c) => `<li><div><strong>${esc(c.code)} \u00B7 ${esc(c.title)}</strong><small>${esc(c.section)} \u00B7 ${fmtTime(c.start)}\u2013${fmtTime(c.end)} \u00B7 ${esc(c.room)}</small></div><button type="button" class="btn-solid btn-sm" data-act="att-open" data-id="${c.id}">Take attendance</button></li>`).join('')}</ul>` : '<p class="dm-modal-note">You have no class meetings today.</p>')}
-          ${card('My classes', table(['Course', 'Section', 'Schedule', 'Room', 'Students'], cls.map((c) => `<tr><td><strong>${esc(c.code)}</strong><br><small>${esc(c.title)}</small></td><td>${esc(c.section)}</td><td>${esc(schedText(c))}</td><td>${esc(c.room)}</td><td>${c.size}/${c.capacity}</td></tr>`)))}
+          ${card('My classes', table(['Course', 'Schedule', 'Room', 'Students'], cls.map((c) => `<tr><td><strong>${esc(c.code)} \u00B7 ${esc(c.section)}</strong><br><small>${esc(c.title)}</small></td><td>${esc(schedText(c))}</td><td>${esc(c.room)}</td><td>${c.size}/${c.capacity}</td></tr>`), undefined, 'dashClasses'))}
         </div>
         <div class="staff-stack">
           ${card('To do', `<ul class="staff-list">${attTasks.map((c) => `<li><div><strong>Submit attendance</strong><small>${esc(c.code)} ${esc(c.section)} \u00B7 ${fmtDate(meetingDates(c)[0])}</small></div><button type="button" class="btn-light btn-sm" data-act="att-open" data-id="${c.id}">Open</button></li>`).join('')}${gradeTasks.map(([c, p]) => `<li><div><strong>Submit ${esc(p)} grades</strong><small>${esc(c.code)} ${esc(c.section)}</small></div><button type="button" class="btn-light btn-sm" data-act="gr-open" data-id="${c.id}" data-period="${p}">Open</button></li>`).join('')}</ul>${attTasks.length + gradeTasks.length ? '' : '<p class="dm-modal-note">You\u2019re all caught up.</p>'}`)}
@@ -864,7 +875,7 @@
   }
   function rosterModal(c) {
     openModal({ title: `Class list \u00B7 ${c.code} ${c.section}`, ok: 'Export CSV', cancel: 'Close',
-      body: table(['#', 'Student number', 'Name', 'Program'], ROSTER.map((s, i) => `<tr><td>${i + 1}</td><td>${s.sn}</td><td>${esc(s.name)}</td><td>BSIT</td></tr>`)) + `<p class="dm-foot">Showing ${ROSTER.length} of ${c.size} enrolled students (sample roster).</p>`,
+      body: table(['#', 'Student number', 'Name', 'Program'], ROSTER.map((s, i) => `<tr><td>${i + 1}</td><td>${s.sn}</td><td>${esc(s.name)}</td><td>BSIT</td></tr>`)) + `<p class="dm-foot">${ROSTER.length} enrolled students.</p>`,
       onOk: () => { downloadCsv(`Class list ${c.code} ${c.section}`, ['Student number', 'Name', 'Program'], ROSTER.map((s) => [s.sn, s.name, 'BSIT'])); return false; } });
   }
 
@@ -968,11 +979,11 @@
     const status = db.fac.gradeStatus[`${c.id}|${ui.gr.period}`] || 'Draft';
     const locked = !['Draft', 'Returned'].includes(status);
     const gnote = (db.fac.gradeNotes || {})[`${c.id}|${ui.gr.period}`];
-    return `${head('Grade Management', 'Define assessments, encode scores and submit period grades for Department Head review. The Registrar posts approved grades.',
+    return `${head('Grade Management', 'Define assessments, encode scores and submit Final grades for Department Head review. The Registrar posts approved grades.',
       locked ? '' : '<button type="button" class="btn-solid" data-act="gr-add">+ Add assessment</button>')}
       ${card('', `<div class="staff-toolbar">
         <select id="grCls" class="dm-select" aria-label="Class">${opts(cls.map((x) => [x.id, `${x.code} \u00B7 ${x.section}`]), c.id)}</select>
-        <select id="grPeriod" class="dm-select" aria-label="Grading period">${opts(PERIODS.map((p) => [p, p]), ui.gr.period)}</select>
+        ${PERIODS.length > 1 ? `<select id="grPeriod" class="dm-select" aria-label="Grading period">${opts(PERIODS.map((p) => [p, p]), ui.gr.period)}</select>` : `<span class="staff-meta"><strong>${esc(PERIODS[0])} grades</strong></span>`}
         <span class="staff-meta">Weights total <strong class="${totalW === 100 ? '' : 'staff-bad'}">${totalW}%</strong>${totalW === 100 || !list.length ? '' : ' (should be 100%)'}</span>
         <span class="staff-spacer"></span>${badge(status)}
       </div>
@@ -992,7 +1003,7 @@
   function correctionsCard(list, title, actions) {
     return card(title, list.length ? table(['ID', 'Student', 'Course', 'Posted', 'Corrected', 'Reason', 'Status', ''], list.map((x) => {
       const last = x.history[x.history.length - 1];
-      return `<tr><td>${esc(x.id)}<br><small>${esc(x.ts.slice(0, 10))}</small></td><td><strong>${esc(x.name)}</strong><br><small>${esc(x.sn)}</small></td><td>${esc(x.code)} \u00B7 ${esc(x.section)}</td>
+      return `<tr><td>${esc(x.id)}<br><small>${esc(fmtDate(x.ts))}</small></td><td><strong>${esc(x.name)}</strong><br><small>${esc(x.sn)}</small></td><td>${esc(x.code)} \u00B7 ${esc(x.section)}</td>
         <td class="num">${fmtGrade(x.from)}</td><td class="num"><strong>${fmtGrade(x.to)}</strong></td><td>${esc(x.reason)}</td>
         <td><span class="dm-status ${STATUS_CLS[CORR_TONE[x.status]] || 'muted'}">${esc(x.status)}</span>${x.status === 'Rejected' && last.note ? `<br><small>${esc(last.note)}</small>` : ''}</td>
         <td>${actions && x.status === 'Requested' ? `<button type="button" class="btn-solid btn-sm" data-act="gc-endorse" data-id="${x.id}">Endorse</button> <button type="button" class="btn-light btn-sm" data-act="gc-reject" data-id="${x.id}">Reject</button>` : x.status === 'Endorsed' ? '<small>With the Registrar</small>' : x.status === 'Requested' ? '<small>With the Department Head</small>' : ''}</td></tr>`;
@@ -1044,7 +1055,7 @@
     { id: 'classlist', name: 'Class List', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['#', 'Student number', 'Name', 'Course', 'Section', 'Faculty'], rows: ROSTER.map((s, i) => [i + 1, s.sn, s.name, c.code, c.section, me.name]) }) },
     { id: 'daily', name: 'Daily Attendance Report', roles: ['FACULTY'], filters: ['class', 'date'], build: (c) => { const s = attSession(c, ui.rep.date); return { cols: ['Student number', 'Name', 'Status', 'Time in', 'Time out', 'Remarks'], rows: s ? ROSTER.map((r) => { const x = s.rows[r.sn] || {}; return [r.sn, r.name, x.status || '\u2014', x.timeIn || '\u2014', x.timeOut || '\u2014', x.remarks || '']; }) : [] }; } },
     { id: 'attsum', name: 'Student Attendance Summary', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['Student number', 'Name', 'Sessions', 'Attended', 'Attendance %'], rows: ROSTER.map((s) => { const a = attPct(c.id, s.sn); return [s.sn, s.name, a.held, a.att, a.pct.toFixed(1) + '%']; }) }) },
-    { id: 'gradesrep', name: 'Student Grade Report', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['Student number', 'Name', ...PERIODS.flatMap((p) => [`${p} %`, `${p} grade`]), 'Status'], rows: ROSTER.map((s) => [s.sn, s.name, ...PERIODS.flatMap((p) => { const r = periodResult(c.id, p, s.sn); return [r.pct === null ? '\u2014' : r.pct.toFixed(1), r.pct === null || !r.complete ? '\u2014' : toGrade(r.pct).toFixed(2)]; }), PERIODS.map((p) => `${p}: ${db.fac.gradeStatus[`${c.id}|${p}`] || 'Draft'}`).join(' \u00B7 ')]) }) },
+    { id: 'gradesrep', name: 'Student Grade Report', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['Student number', 'Name', ...PERIODS.flatMap((p) => [`${p} %`, `${p} grade`]), 'Status'], rows: ROSTER.map((s) => [s.sn, s.name, ...PERIODS.flatMap((p) => { const r = periodResult(c.id, p, s.sn); return [r.pct === null ? '\u2014' : r.pct.toFixed(1), r.pct === null || !r.complete ? '\u2014' : toGrade(r.pct).toFixed(2)]; }), PERIODS.map((p) => (PERIODS.length > 1 ? `${p}: ` : '') + (db.fac.gradeStatus[`${c.id}|${p}`] || 'Draft')).join(' \u00B7 ')]) }) },
     // Academic performance, absence and tardiness (design reference 6.5); faculty see their class, Dept Heads every class
     { id: 'perf', name: 'Academic Performance Report', roles: ['FACULTY'], filters: ['class'], build: (c) => perfReport([c]) },
     { id: 'deptperf', name: 'Department Academic Performance', roles: ['DEPT_HEAD'], filters: [], build: () => perfReport(db.classes) },
@@ -1103,7 +1114,7 @@
         ${def.filters.includes('range') ? `<label class="staff-inline">From <input type="date" id="repFrom" class="dm-select" value="${esc(ui.rep.from)}" /></label><label class="staff-inline">To <input type="date" id="repTo" class="dm-select" value="${esc(ui.rep.to)}" /></label>` : ''}
         <button type="button" class="btn-solid" data-act="rep-generate">Generate</button></div>
         <div id="repOut">${ui.rep.result ? reportPaper(ui.rep.result) : '<p class="dm-empty">Choose a report and press Generate.</p>'}</div>`)}
-      ${mine.length ? card('Recently generated', table(['Generated', 'Report', 'By', 'Records'], mine.map((r) => `<tr><td>${esc(r.ts)}</td><td>${esc(r.name)}</td><td>${esc(r.by)}</td><td>${r.count}</td></tr>`))) : ''}`;
+      ${mine.length ? card('Recently generated', table(['Generated', 'Report', 'By', 'Records'], mine.map((r) => `<tr><td>${esc(fmtStamp(r.ts))}</td><td>${esc(r.name)}</td><td>${esc(r.by)}</td><td>${r.count}</td></tr>`))) : ''}`;
   };
   function reportPaper(r) {
     return `<div class="staff-report-bar"><button type="button" class="btn-light btn-sm" data-act="rep-csv">Export CSV</button><button type="button" class="btn-solid btn-sm" data-act="rep-print">Print / Save as PDF</button></div>
@@ -1112,7 +1123,7 @@
   function paperHtml(r) {
     return `<div class="paper-head"><div class="paper-brand"><span class="paper-mark" aria-hidden="true">B</span><div><strong>BITS-SIMS</strong><small>Student Information Management System</small></div></div></div>
       <h3 class="paper-title">${esc(r.title.toUpperCase())}</h3><p class="paper-subtitle">${esc(r.sub)}</p>
-      <dl class="paper-info"><div><dt>Generated by</dt><dd>${esc(me.name)}</dd></div><div><dt>Role</dt><dd>${esc(ROLE_LABEL[me.role])}</dd></div><div><dt>Date</dt><dd>${esc(r.ts)}</dd></div><div><dt>Records</dt><dd>${r.rows.length}</dd></div></dl>
+      <dl class="paper-info"><div><dt>Generated by:</dt><dd>${esc(me.name)}</dd></div><div><dt>Role:</dt><dd>${esc(ROLE_LABEL[me.role])}</dd></div><div><dt>Date:</dt><dd>${esc(fmtStamp(r.ts))}</dd></div><div><dt>Records:</dt><dd>${r.rows.length}</dd></div></dl>
       <table class="paper-table"><thead><tr>${r.cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${r.rows.length ? r.rows.map((row) => `<tr>${row.map((v) => `<td>${esc(v)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${r.cols.length}">No records for the selected filters.</td></tr>`}</tbody></table>`;
   }
   function generateReport() {
@@ -1472,13 +1483,13 @@
             <div><dt>Role</dt><dd>${esc(ROLE_LABEL[me.role])}</dd></div><div><dt>Employee no.</dt><dd>${esc(me.employeeNo)}</dd></div>
             <div><dt>Department</dt><dd>${esc(me.dept)}</dd></div><div><dt>Work email</dt><dd>${esc(me.email)}</dd></div>
             <div><dt>Contact</dt><dd>${esc(me.contact)}</dd></div><div><dt>Date hired</dt><dd>${fmtDate(me.hired)}</dd></div>
-            <div><dt>Account status</dt><dd>${esc(rec.status || 'Active')}</dd></div><div><dt>Last login</dt><dd>${esc(rec.lastLogin || '\u2014')}</dd></div>
+            <div><dt>Account status</dt><dd>${esc(rec.status || 'Active')}</dd></div><div><dt>Last login</dt><dd>${esc(fmtStamp(rec.lastLogin))}</dd></div>
           </dl>`)}
         <form id="pwForm" class="dash-card dm-card staff-card staff-form" novalidate>
           <h3 class="adm-sec-title">Change password</h3>
-          ${field('spCur', 'Current password', '<input id="spCur" type="password" autocomplete="current-password" />')}
-          ${field('spNew', 'New password', '<input id="spNew" type="password" autocomplete="new-password" />', `At least ${db.policy.minPw} characters with upper and lower case letters, a number and a symbol.`)}
-          ${field('spConf', 'Confirm new password', '<input id="spConf" type="password" autocomplete="new-password" />')}
+          ${field('spCur', 'Current password', pwInput('spCur', 'current-password'))}
+          ${field('spNew', 'New password', pwInput('spNew', 'new-password'), `At least ${db.policy.minPw} characters with upper and lower case letters, a number and a symbol.`)}
+          ${field('spConf', 'Confirm new password', pwInput('spConf', 'new-password'))}
           <div class="pw-meter-row"><div class="pw-meter" id="spMeter" data-level="0"><span></span></div><small id="spMeterLabel"></small></div>
           <div class="set-actions"><button type="submit" class="btn-solid">Update password</button></div>
         </form>
@@ -1572,6 +1583,7 @@
           const r = decideCorrection(id, 'reject', me.username, $('#gcNote').value);
           if (!r.ok) { setErr('gcNote', r.message); return false; }
           toast('Correction rejected.'); render(); return true; } }); break; }
+      case 'pw-toggle': { const inp = $('#' + el.dataset.target); if (!inp) break; const show = inp.type === 'password'; inp.type = show ? 'text' : 'password'; el.textContent = show ? 'Hide' : 'Show'; el.setAttribute('aria-pressed', String(show)); el.setAttribute('aria-label', show ? 'Hide password' : 'Show password'); break; }
       case 'rep-generate': generateReport(); break;
       case 'rep-csv': if (ui.rep.result) { downloadCsv(ui.rep.result.title, ui.rep.result.cols, ui.rep.result.rows); audit('Reports', 'GeneratedReports', ui.rep.id, 'EXPORT', `Exported ${ui.rep.result.title} to CSV`); } break;
       case 'rep-print': if (ui.rep.result) printReport(); break;
@@ -1664,7 +1676,8 @@
       ['spCur', 'spNew', 'spConf'].forEach((i) => setErr(i, ''));
       const cur = $('#spCur').value, nw = $('#spNew').value, conf = $('#spConf').value; let ok = true;
       if (hash(cur) !== (db.pw[me.username] || me.pwHash)) { setErr('spCur', 'Current password is incorrect.'); ok = false; }
-      if (nw.length < db.policy.minPw || !/[a-z]/.test(nw) || !/[A-Z]/.test(nw) || !/\d/.test(nw) || !/[^A-Za-z0-9]/.test(nw)) { setErr('spNew', `Use ${db.policy.minPw}+ characters with upper and lower case letters, a number and a symbol.`); ok = false; }
+      const pwIssue = window.SIMSAuth ? SIMSAuth.passwordProblem(nw) : (nw.length < db.policy.minPw ? `Use at least ${db.policy.minPw} characters.` : '');
+      if (pwIssue) { setErr('spNew', pwIssue); ok = false; }
       else if (nw === cur) { setErr('spNew', 'Choose a password different from the current one.'); ok = false; }
       if (conf !== nw) { setErr('spConf', 'Passwords do not match.'); ok = false; }
       if (!ok) return;

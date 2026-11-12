@@ -432,7 +432,7 @@
   pages.settings = () => {
     const m = settings();
     return `<h1>Account Settings</h1><div class="ad-panel"><h3>Contact details</h3><div class="ad-grid"><label>Work email<input id="s_email" value="${esc(m.email)}"></label><label>Mobile<input id="s_mobile" value="${esc(m.mobile)}"></label><label>Office<input id="s_office" value="${esc(m.office)}"></label></div><p><button class="ad-btn" data-x="savecontact">Save changes</button></p></div>
-    <div class="ad-panel"><h3>Change password</h3><div class="ad-grid"><label>Current<input id="p_cur" type="password"></label><label>New<input id="p_new" type="password"></label><label>Confirm<input id="p_con" type="password"></label></div><p><button class="ad-btn" data-x="savepw">Update password</button></p><p class="ad-note">Use at least 8 characters with letters and numbers.</p></div>
+    <div class="ad-panel"><h3>Change password</h3><div class="ad-grid"><label>Current<input id="p_cur" type="password"></label><label>New<input id="p_new" type="password"></label><label>Confirm<input id="p_con" type="password"></label></div><p><button class="ad-btn" data-x="savepw">Update password</button></p><p class="ad-note">Use at least 8 characters with upper and lower case letters, a number and a symbol.</p></div>
     <div class="ad-panel"><h3>Alerts</h3>${[['queue', 'Queue alerts'], ['grades', 'Grade submissions'], ['login', 'Login alerts']].map(([k, l]) => `<label><input type="checkbox" class="nt" value="${k}" ${m.notif[k] ? 'checked' : ''}> ${l}</label> `).join('')}<p><button class="ad-btn" data-x="savenotif">Save alerts</button></p></div>`;
   };
 

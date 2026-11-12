@@ -224,3 +224,5 @@
     print-color-adjust: exact;
   }
 }
+/* Faculty dashboard: the classes table fits its card */
+#dashClasses { min-width: 0; }

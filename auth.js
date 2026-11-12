@@ -5,7 +5,7 @@
      - Forgot password: one-time 6-digit reset code that
        expires in 15 minutes and can be tried 5 times
      - Password rules (minimum length from ICT's security
-       policy, letters and numbers)
+       policy, upper and lower case letters, a number and a symbol)
    and, for Students and the Registrar:
      - Lockout after too many failed logins (same numbers
        as ICT's security policy: 5 tries, 15 minutes)
@@ -67,7 +67,7 @@
   /* ---------- Password rules ---------- */
   function passwordProblem(pw) {
     const min = policy().minPw;
-    if (!pw || pw.length < min || !/[A-Za-z]/.test(pw) || !/\d/.test(pw)) return `Use at least ${min} characters with letters and numbers.`;
+    if (!pw || pw.length < min || !/[a-z]/.test(pw) || !/[A-Z]/.test(pw) || !/\d/.test(pw) || !/[^A-Za-z0-9]/.test(pw)) return `Use at least ${min} characters with upper and lower case letters, a number and a symbol.`;
     return '';
   }
 
