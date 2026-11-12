@@ -65,3 +65,11 @@ button.ad-card{cursor:pointer}.ad-card small{display:block;text-transform:upperc
   body.rp-printing #rpPreview{position:absolute;left:0;top:0;width:100%}
   body.rp-printing .rp-paper{border:0}
 }
+/* Home: recent activity reads as a feed, not links */
+.ad-feed li{display:flex;justify-content:space-between;gap:1rem;color:#2c3e50}
+.ad-feed li:nth-child(odd){background:#e4ecf8}
+.ad-feed small{white-space:nowrap;color:#4a5a6a;opacity:1}
+.ad-more{margin:.6rem 0 0;font-size:.78rem}.ad-more a{color:var(--blue);font-weight:700;cursor:pointer}
+/* My Account uses the staff portal layout */
+.ad-body .staff-panel{display:flex;flex-direction:column;gap:1.1rem}
+.ad-body .dm-head h1{margin-bottom:.2rem}

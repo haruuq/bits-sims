@@ -1807,7 +1807,7 @@ document.addEventListener('DOMContentLoaded', () => {
      (applications and dates below are sample data)
   ===================================================== */
   const ADM_KEY = 'bits-sims-admissions';
-  const ADM_TYPES = { freshman: 'Freshman', transferee: 'Transferee', returnee: 'Returnee' };
+  const ADM_TYPES = { freshman: 'Freshman', transferee: 'Transferee', returnee: 'Returnee', shiftee: 'Shiftee' };
   const ADM_TABS = ['overview', 'new', 'status', 'enroll'];
   const ADM_MIN_UNITS = 12;
   const ADM_MAX_UNITS = 24;
@@ -1823,11 +1823,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const ADM_LEGEND_ORDER = ['pending', 'review', 'accepted', 'rejected', 'withdrawn'];
 
   const ADM_OFFERINGS = [
-    { code: 'CS 101', title: 'Introduction to Computing', units: 3 },
-    { code: 'CS 102', title: 'Computer Programming 1', units: 3 },
+    { code: 'IT 101', title: 'Introduction to Computing', units: 3 },
+    { code: 'IT 102', title: 'Computer Programming 1', units: 3 },
     { code: 'GE-MMW', title: 'Mathematics in the Modern World', units: 3 },
     { code: 'GE-UTS', title: 'Understanding the Self', units: 3 },
-    { code: 'GE-RPH', title: 'Readings in Philippine History', units: 3 },
+    { code: 'GE-PC', title: 'Purposive Communication', units: 3 },
     { code: 'PE 1', title: 'Physical Fitness and Wellness', units: 2 },
     { code: 'NSTP 1', title: 'National Service Training Program 1', units: 3 }
   ];
@@ -1836,44 +1836,35 @@ document.addEventListener('DOMContentLoaded', () => {
   const ADM_X = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   const ADM_FOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M9 14h6"/></svg>';
 
+  // Dawson's own admission: freshman BSIT in 2024, now a 3rd-year student
+  const ADM_VERSION = 2;
   const admDefaults = () => ({
-    currentId: 'ADM-2026-004821',
+    version: ADM_VERSION,
+    currentId: 'ADM-2024-001208',
     applications: [
       {
-        id: 'ADM-2026-004821', program: 'BS Computer Science', type: 'freshman',
-        term: '1st Semester, AY 2027\u20132028', submitted: '2026-10-06',
-        verified: '2026-10-08', verifiedTime: '10:42 AM', decision: '2026-10-21',
-        status: 'accepted', studentId: 'S-2027-00412', completedOn: null,
-        remarks: 'Congratulations on your admission. Please confirm your slot and complete your student registration so we can issue your student record. (Sample remark from the admissions office.)'
-      },
-      {
-        id: 'ADM-2026-004822', program: 'BS Information Technology', type: 'freshman',
-        term: '1st Semester, AY 2027\u20132028', submitted: '2026-10-06',
-        verified: '2026-10-08', verifiedTime: '10:51 AM', decision: null,
-        status: 'review', studentId: null, completedOn: null, remarks: ''
-      },
-      {
-        id: 'ADM-2026-001377', program: 'BS Nursing', type: 'freshman',
-        term: '1st Semester, AY 2026\u20132027', submitted: '2026-07-12',
-        verified: null, verifiedTime: '', decision: null,
-        status: 'withdrawn', studentId: null, completedOn: null, remarks: ''
+        id: 'ADM-2024-001208', program: 'BS Information Technology', type: 'freshman',
+        term: '1st Semester, AY 2024\u20132025', submitted: '2024-05-14',
+        verified: '2024-05-16', verifiedTime: '10:42 AM', decision: '2024-06-03',
+        status: 'enrolled', studentId: '2024-12345', completedOn: '2024-07-22',
+        remarks: 'Congratulations on your admission to the BS Information Technology program.'
       }
     ],
     enrollment: {
-      confirmedOn: '2026-10-25',
-      step2Done: false,
+      confirmedOn: '2024-06-10',
+      step2Done: true,
       personal: null,
       draft: null,
-      requirementsDone: false,
-      enlisted: null,
-      completedOn: null
+      requirementsDone: true,
+      enlisted: ['IT 101', 'IT 102', 'GE-MMW', 'GE-UTS', 'GE-PC', 'PE 1', 'NSTP 1'],
+      completedOn: '2024-07-22'
     }
   });
 
   function loadAdm() {
     try {
       const saved = JSON.parse(localStorage.getItem(ADM_KEY));
-      if (saved && Array.isArray(saved.applications) && saved.enrollment) return saved;
+      if (saved && saved.version === ADM_VERSION && Array.isArray(saved.applications) && saved.enrollment) return saved;
     } catch (err) { /* fall through to defaults */ }
     return admDefaults();
   }

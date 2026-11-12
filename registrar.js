@@ -23,7 +23,7 @@
    Shared stores (localStorage), so each side sees the other:
      bits-sims-corrections  student name-change requests  -> Profile Corrections
      bits-sims-documents    uploads + COR/COE/TOR requests -> Document Management
-     bits-sims-admissions   applications                   -> Admissions & Enrollment
+     bits-sims-admissions   the student's own application  -> Admissions & Enrollment
      bits-sims-academic     grades (via SIMSData)          -> transcripts, report cards, analytics
      bits-sims-profile      official profile (on approval)
      bits-sims-registry     students + setup (registry.js)
@@ -36,7 +36,7 @@
 (function () {
   'use strict';
 
-  const K = { docs: 'bits-sims-documents', adm: 'bits-sims-admissions', cor: 'bits-sims-corrections', prof: 'bits-sims-profile', me: 'bits-sims-registrar-me' };
+  const K = { docs: 'bits-sims-documents', adm: 'bits-sims-admissions', cor: 'bits-sims-corrections', prof: 'bits-sims-profile' };
   const rd = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } };
   const wr = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } };
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -55,8 +55,6 @@
   /* ---------- Registry + settings ---------- */
   const reg = () => window.SIMSRegistry.get();
   const saveReg = (d) => window.SIMSRegistry.save(d);
-  const settings = () => Object.assign({ email: acct.email, mobile: acct.contact, office: acct.dept, notif: { queue: true, grades: true, login: false } }, rd(K.me + ':' + acct.username, {}));
-  const saveSettings = (m) => wr(K.me + ':' + acct.username, m);
 
   /* ---------- Audit (shared with the ICT audit trail) ---------- */
   const log = (desc, mod, ent, rec, action) => {
@@ -64,9 +62,14 @@
   };
 
   /* ---------- Queries ---------- */
-  const corrections = () => rd(K.cor, []);
   const docs = () => rd(K.docs, { requirements: [], requests: {} });
+  const corrections = () => rd(K.cor, []);
   const adm = () => rd(K.adm, { applications: [] });
+  // Every application the Registrar decides: the portal student's own plus applicants who are not students yet
+  const allApplications = () => {
+    const stu = reg().students.find((x) => x.no === DEMO_STUDENT);
+    return adm().applications.map((a) => Object.assign({ name: stu ? stu.name : '\u2014' }, a)).concat(reg().applicants || []);
+  };
   const periods = () => SIMSData.rules().gradingPeriods.map((p) => p.key).concat('final');
   // Student-portal grade releases (what the student sees once POSTED)
   // Grade corrections waiting for the Registrar (Faculty -> Dept Head -> Registrar)
@@ -83,7 +86,43 @@
   const f2 = (n) => (n == null ? '\u2014' : n.toFixed(2));
   const gradeTxt = (g) => (g === 'INC' ? 'INC' : typeof g === 'number' ? g.toFixed(2) : '\u2014');
   // Finals only for now: a subject's grade status is the status of its final grade
-  const finalState = (x) => (x.finalGrade == null && x.status !== 'inc' ? 'not yet encoded' : (x.gradeStatus && x.gradeStatus.final) || 'posted');
+  const finalState = (x) => cap(x.finalGrade == null && x.status !== 'inc' ? 'not yet encoded' : (x.gradeStatus && x.gradeStatus.final) || 'posted');
+  // Shown to people: Title Case statuses and readable dates (same as the other portals)
+  const LABEL = { review: 'Under Review', inprogress: 'In Progress', inc: 'INC' };
+  const cap = (t) => LABEL[t] || String(t || '').replace(/^./, (c) => c.toUpperCase());
+  const ADM_TYPE = { freshman: 'Freshman', transferee: 'Transferee', returnee: 'Returnee', shiftee: 'Shiftee' };
+  const fmtDay = (iso) => { if (!iso) return '\u2014'; const [y, m, dd] = String(iso).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, dd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
+  const fmtStamp = (ts) => { if (!ts) return '\u2014'; const [dd, t] = String(ts).split(' '); if (!t) return fmtDay(dd); const [y, m, day] = dd.split('-').map(Number), [h, mi] = t.split(':').map(Number); return new Date(y, m - 1, day, h, mi).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }); };
+  const fullName = (n) => String(n).split(', ').reverse().join(' ');
+  const stuName = (no) => { const x = reg().students.find((y) => y.no === no); return x ? `${x.name} (${no})` : no; };
+
+  /* ---------- Toast + confirm dialog (same look as the staff portal) ---------- */
+  let toastTimer = null, askFn = null;
+  function toast(msg, type) {
+    const el = $('#rgToast'); if (!el) return;
+    el.textContent = msg; el.className = `toast ${type || 'success'} show`;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+  }
+  function ask(title, message, label, fn, danger) {
+    $('#rgAskTitle').textContent = title; $('#rgAskMsg').textContent = message;
+    const ok = $('#rgAskOk'); ok.textContent = label; ok.classList.toggle('btn-danger', Boolean(danger));
+    askFn = fn; $('#rgAsk').classList.remove('hidden'); $('#rgAskCancel').focus();
+  }
+  function closeAsk() { $('#rgAsk').classList.add('hidden'); askFn = null; }
+  function ensureChrome() {
+    if ($('#rgToast')) return;
+    const box = document.createElement('div');
+    box.innerHTML = `<div id="rgAsk" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="rgAskTitle"><div class="modal-card staff-modal-card">
+        <header class="modal-head"><h3 id="rgAskTitle"></h3><button type="button" class="modal-close" id="rgAskX" aria-label="Close">&times;</button></header>
+        <div class="modal-body"><p class="dm-modal-note" id="rgAskMsg"></p></div>
+        <footer class="modal-foot"><button type="button" class="btn-light btn-sm" id="rgAskCancel">Cancel</button><button type="button" class="btn-solid btn-sm" id="rgAskOk">OK</button></footer></div></div>
+      <div id="rgToast" class="toast" role="status" aria-live="polite"></div>`;
+    while (box.firstChild) document.body.appendChild(box.firstChild);
+    $('#rgAskCancel').addEventListener('click', closeAsk); $('#rgAskX').addEventListener('click', closeAsk);
+    $('#rgAsk').addEventListener('click', (e) => { if (e.target.id === 'rgAsk') closeAsk(); });
+    $('#rgAskOk').addEventListener('click', () => { const fn = askFn; closeAsk(); if (fn) fn(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#rgAsk').classList.contains('hidden')) closeAsk(); });
+  }
 
   /* =====================================================
      PAGES
@@ -93,13 +132,14 @@
   /* ---- Home ---- */
   pages.home = () => {
     const d = reg(), docsD = docs();
-    const apps = adm().applications.filter((a) => a.status === 'pending' || a.status === 'review');
+    const apps = allApplications().filter((a) => a.status === 'pending' || a.status === 'review');
     const cor = corrections().filter((c) => c.status === 'pending');
     const dd = docsD.requirements.filter((r) => r.status === 'review');
     const enrWait = d.enrollments.filter((e) => e.status === 'Pending' || e.status === 'Verified').length;
     const gqCorr = gradeCorrections().filter((x) => x.status === 'Endorsed').length, gqFaculty = sheets().filter((s) => s.status === 'Approved').length;
     const act = (staff() ? staff().auditFor(acct.username, 20) : []).filter((x) => x.act !== 'LOGIN' && x.act !== 'LOGOUT').slice(0, 4);
-    const att = SIMSData.get().subjects.map((x) => SIMSData.attendanceRate(x.attendance)).filter((n) => n != null), rate = att.length ? Math.round(att.reduce((a, b) => a + b, 0) / att.length) : 0;
+    // Average of every class's attendance rate (what faculty recorded)
+    const att = (staff() ? staff().attendanceSummary() : []).map((r) => r.rate).filter((n) => n != null), rate = att.length ? Math.round(att.reduce((a, b) => a + b, 0) / att.length) : 0;
     const now = new Date(), first = new Date(now.getFullYear(), now.getMonth(), 1).getDay(), days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const cal = ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((x) => `<b>${x}</b>`).join('') + '<span></span>'.repeat(first) + Array.from({ length: days }, (_, i) => `<span class="${i + 1 === now.getDate() ? 'td' : ''}">${i + 1}</span>`).join('');
     const q = [
@@ -109,12 +149,13 @@
       ['Documents awaiting verification', dd.length + Object.keys(docsD.requests).length, oldest(dd.map((r) => r.updated).concat(Object.values(docsD.requests))), 'documents'],
       ['Grades and corrections awaiting posting', gqCorr + gqFaculty, '\u2014', 'records']
     ];
-    return `<div class="ad-stats" style="grid-template-columns:repeat(5,1fr)">${[['Total students', d.students.length], ['Active students', d.students.filter((s) => s.status === 'Active').length], ['Departments', d.setup.Departments.length], ['Programs', d.setup.Programs.length], ['Enrolled this term', d.enrollments.filter((e) => e.status === 'Enrolled').length]].map((r) => `<div class="ad-card"><small>${r[0]}</small><b>${r[1]}</b></div>`).join('')}</div>
-      <div class="ad-card" style="margin-bottom:1rem"><small>Overall attendance rate</small><b>${rate}%</b></div>
+    return `<h1>Welcome back, ${esc(acct.name.split(' ')[0])}</h1><p class="ad-sub">${esc(acct.dept)} \u00B7 ${esc(SIMSData.termLabel(SIMSData.currentTerm()))}</p>
+      <div class="ad-stats" style="grid-template-columns:repeat(5,1fr)">${[['Total students', d.students.length], ['Active students', d.students.filter((s) => s.status === 'Active').length], ['Departments', d.setup.Departments.length], ['Programs', d.setup.Programs.length], ['Enrolled this term', d.enrollments.filter((e) => e.status === 'Enrolled').length]].map((r) => `<div class="ad-card"><small>${r[0]}</small><b>${r[1]}</b></div>`).join('')}</div>
+      <div class="ad-card" style="margin-bottom:1rem"><small>Overall attendance rate (all classes)</small><b>${rate}%</b></div>
       <div class="ad-row"><div class="ad-card ad-id"><span class="ad-ra big">${esc(initials(acct.name))}</span><span>${esc(acct.name)}<br>${esc(acct.title)}</span></div>
       <div class="ad-card"><table class="ad-queue" style="width:100%;font-size:.8rem;border-collapse:collapse"><tr style="color:#17305e;border-bottom:2px solid var(--blue)"><th style="text-align:left;padding:.4rem">Pending Queues</th><th>Pending</th><th>Oldest</th></tr>${q.map((r) => `<tr data-go="${r[3]}"><td style="padding:.55rem .4rem;color:var(--blue)">${esc(r[0])}</td><td style="color:var(--blue)">${r[1]}</td><td style="color:var(--blue)">${r[2]}</td></tr>`).join('')}</table></div>
       <div class="ad-card ad-cal"><h4>${now.toLocaleString('en', { month: 'long', year: 'numeric' })}</h4><div>${cal}</div></div></div>
-      <div class="ad-row2"><div class="ad-card"><h3 style="margin-top:0">Recent Activities</h3><ul class="ad-list">${act.length ? act.map((x) => `<li>${esc(x.desc)}</li>`).join('') : '<li>No activity yet.</li>'}</ul></div><button class="ad-tile" data-x="newstu"><svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 11v6M9 14h6"/></svg>Register Student</button></div>`;
+      <div class="ad-row2"><div class="ad-card"><h3 style="margin-top:0">Recent Activities</h3><ul class="ad-list ad-feed">${act.length ? act.map((x) => `<li><span>${esc(x.desc)}</span><small>${esc(fmtStamp(x.ts))}</small></li>`).join('') : '<li>No activity yet.</li>'}</ul><p class="ad-more"><a data-go="activity">See all activity</a></p></div><button class="ad-tile" data-x="newstu"><svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 11v6M9 14h6"/></svg>Register Student</button></div>`;
   };
 
   /* ---- Student Profiles + Register + Profile + Corrections ---- */
@@ -123,7 +164,7 @@
     const rows = d.students.filter((s) => (!q || (s.no + s.name).toLowerCase().includes(q)) && (!fl.st || s.status === fl.st)).map((s) => [s.no, s.name, s.program, s.year, badge(stCls(s.status), s.status), `<a data-x="view" data-v="${esc(s.no)}">View Profile</a><a data-x="${s.status === 'Archived' ? 'restore' : 'archive'}" data-v="${esc(s.no)}">${s.status === 'Archived' ? 'Restore' : 'Archive'}</a>`]);
     return `<h1>Student Profiles</h1><p class="ad-note">Search, review, and manage registered students.</p>
       <p class="ad-filters"><input id="fq" placeholder="Student number or name" value="${esc(fl.q)}"> <select id="fs"><option value="">All statuses</option>${['Active', 'On Leave', 'Archived'].map((x) => `<option ${fl.st === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
-      <button class="ad-btn" data-x="filter">Filter</button> <button class="ad-btn alt" data-go="corrections">Review Profile Correction</button> <button class="ad-btn" data-x="newstu">Register Student</button></p>
+      <button class="ad-btn" data-x="filter">Filter</button> <button class="ad-btn alt" data-go="corrections">Profile Correction Requests</button> <button class="ad-btn" data-x="newstu">Register Student</button></p>
       ${table(['Student No.', 'Name', 'Program', 'Year', 'Status', 'Actions'], rows)}<p class="ad-note">Showing ${rows.length} of ${d.students.length}. Records are deactivated or archived, never deleted.</p>`;
   };
 
@@ -142,12 +183,12 @@
     let body;
     if (tab === 'Grades') {
       const r = SIMSData.recordFor(s.no);
-      body = (r.terms.length ? r.terms.map((t) => `<h3>${esc(SIMSData.termLabel(t.term))} \u00B7 GWA ${f2(t.gwa)} \u00B7 ${esc(t.standing)}</h3>${table(['Course', 'Units', 'Final grade', 'Remarks'], t.subjects.map((g) => [g.code + ' \u00B7 ' + g.title, g.units.toFixed(1), g.status === 'inc' ? 'INC' : f2(g.grade), g.status]))}`).join('')
+      body = (r.terms.length ? r.terms.map((t) => `<h3>${esc(SIMSData.termLabel(t.term))} \u00B7 GWA ${f2(t.gwa)} \u00B7 ${esc(t.standing)}</h3>${table(['Course', 'Units', 'Final grade', 'Remarks'], t.subjects.map((g) => [g.code + ' \u00B7 ' + g.title, g.units.toFixed(1), g.status === 'inc' ? 'INC' : f2(g.grade), cap(g.status)]))}`).join('')
           + `<p class="ad-note">Cumulative GWA ${f2(r.cumulative)} \u00B7 ${r.unitsEarned.toFixed(1)} units earned. Only posted grades are shown.</p>` : '<p>No posted grades yet.</p>')
         + (real ? `<h3>Current term (in progress)</h3>${table(['Course', 'Finals', 'Status'], SIMSData.get().subjects.filter((x) => x.termId === SIMSData.currentTerm().id).map((x) => [x.code, x.status === 'inc' ? 'INC' : x.finalGrade == null ? '\u2014' : f2(x.finalGrade), finalState(x)]))}` : '')
         + `<p><button class="ad-btn" data-x="rp-open" data-v="tor">Transcript of Records</button> <button class="ad-btn alt" data-x="rp-open" data-v="reportcard">Report Card</button></p>`;
     }
-    else if (tab === 'Documents') body = real ? table(['Document', 'Status'], docs().requirements.map((r) => [r.name, r.status])) : '<p>No documents on file.</p>';
+    else if (tab === 'Documents') body = real ? table(['Document', 'Status'], docs().requirements.map((r) => [r.name, cap(r.status)])) : '<p>No documents on file.</p>';
     else body = table(['Field', 'Value'], tab === 'Contact Information' ? [['Email', s.email || '\u2014'], ['Mobile', s.mobile || '\u2014'], ['City', s.city || '\u2014']]
       : tab === 'General Information' ? [['Admission type', s.admission], ['Department', s.dept], ['Date of birth', s.dob || '\u2014']]
       : tab === 'Guardian Information' ? [['Guardian', s.gname || '\u2014'], ['Guardian contact', s.gnum || '\u2014'], ['Emergency contact', s.ename || '\u2014'], ['Emergency number', s.enum || '\u2014']]
@@ -158,15 +199,15 @@
   pages.corrections = () => {
     const all = corrections();
     const cur = all.find((x) => x.id === sel) || all.find((x) => x.status === 'pending');
-    const rows = all.map((x) => `<tr data-sel="${esc(x.id)}" class="${cur && cur.id === x.id ? 'on' : ''}"><td>${esc(x.student)}</td><td>${esc(x.label)}</td><td>${esc(x.next)}</td><td>${esc(x.date)}</td><td>${badge(x.status === 'pending' ? 'warn' : x.status === 'approved' ? 'ok' : 'risk', x.status)}</td></tr>`).join('');
+    const rows = all.map((x) => `<tr data-sel="${esc(x.id)}" class="${cur && cur.id === x.id ? 'on' : ''}"><td>${esc(stuName(x.student))}</td><td>${esc(x.label)}</td><td>${esc(x.next)}</td><td>${esc(fmtDay(x.date))}</td><td>${badge(x.status === 'pending' ? 'warn' : x.status === 'approved' ? 'ok' : 'risk', cap(x.status))}</td></tr>`).join('');
     const panel = cur ? `<div class="ad-panel"><h3>Review Request</h3>
       <p><small>Field</small> <b>${esc(cur.label)}</b></p><p><small>Existing value</small> <b>${esc(cur.old)}</b></p>
       <p><small>Requested value</small> <b>${esc(cur.next)}</b></p><p><small>Reason</small> <b>${esc(cur.reason || '\u2014')}</b></p>
       ${cur.status === 'pending' ? `<textarea id="adRemarks" placeholder="Review remarks"></textarea>
       <button class="ad-btn" data-cor="approved" data-id="${esc(cur.id)}">Approve</button> <button class="ad-btn alt" data-cor="rejected" data-id="${esc(cur.id)}">Reject</button>`
-      : `<p><small>Decision</small> <b>${esc(cur.status)}</b> \u2014 ${esc(cur.remarks || 'no remarks')}</p>`}</div>` : '';
+      : `<p><small>Decision</small> <b>${esc(cap(cur.status))}</b> \u2014 ${esc(cur.remarks || 'no remarks')}</p>`}</div>` : '';
     return `<h1>Profile Correction Requests</h1><p class="ad-sub">Review name and detail changes requested by students.</p><div class="ad-split">
-      <table class="ad-table"><tr><th>Student</th><th>Field</th><th>Requested</th><th>Date</th><th>Status</th></tr>${rows || '<tr><td colspan="5">No requests yet. A student name change in Account Settings appears here.</td></tr>'}</table>${panel}</div>
+      <table class="ad-table"><tr><th>Student</th><th>Field</th><th>Requested</th><th>Date</th><th>Status</th></tr>${rows || '<tr><td colspan="5">No requests yet. When a student changes their name in My Profile, the request appears here.</td></tr>'}</table>${panel}</div>
       <p><button class="ad-btn alt" data-go="students">Back to Student Profiles</button></p>`;
   };
 
@@ -175,17 +216,20 @@
     const d = reg();
     let body;
     if (mtab === 'Applications') {
-      const rows = adm().applications.map((a) => `<tr><td>${esc(a.id)}</td><td>${esc(a.program)}</td><td>${esc(a.type)}</td><td>${esc(a.term)}</td><td>${badge(a.status === 'accepted' ? 'ok' : a.status === 'rejected' ? 'risk' : a.status === 'review' ? 'info' : 'warn', a.status)}</td>
+      const rows = allApplications().map((a) => `<tr><td>${esc(a.id)}</td><td>${esc(a.name)}</td><td>${esc(a.program)}</td><td>${esc(ADM_TYPE[a.type] || cap(a.type))}${a.year ? ` \u00B7 ${esc(a.year)} Year` : ''}</td><td>${esc(a.term)}</td><td>${esc(fmtDay(a.submitted))}</td><td>${badge(a.status === 'accepted' || a.status === 'enrolled' ? 'ok' : a.status === 'rejected' ? 'risk' : a.status === 'review' ? 'info' : 'warn', cap(a.status))}</td>
         <td>${a.status === 'pending' ? `<a data-app="review" data-id="${esc(a.id)}">Start review</a> ` : ''}${a.status === 'pending' || a.status === 'review' ? `<a data-app="accepted" data-id="${esc(a.id)}">Accept</a> <a data-app="rejected" data-id="${esc(a.id)}">Reject</a>` : ''}</td></tr>`).join('');
-      body = `<table class="ad-table"><tr><th>App. No.</th><th>Program</th><th>Type</th><th>Term</th><th>Status</th><th>Actions</th></tr>${rows || '<tr><td colspan="6">No applications yet.</td></tr>'}</table>
+      body = `<table class="ad-table"><tr><th>App. No.</th><th>Applicant</th><th>Program</th><th>Type</th><th>Term</th><th>Submitted</th><th>Status</th><th>Actions</th></tr>${rows || '<tr><td colspan="8">No applications yet.</td></tr>'}</table>
         <p class="ad-note">Decisions are shown to the applicant under Admissions &amp; Enrollment \u2192 Application Status.</p>`;
     } else if (mtab === 'Term Enrollment') {
       body = table(['Ref. No.', 'Student', 'Term', 'Program', 'Year', 'Units', 'Status', 'Action'], d.enrollments.map((e) => [e.ref, e.student, e.term, e.program, e.year, e.units, badge(stCls(e.status === 'Verified' ? 'info' : e.status), e.status),
         e.status === 'Pending' ? `<a data-x="enr" data-v="${esc(e.ref)}">Verify</a>` : e.status === 'Verified' ? `<a data-x="enr" data-v="${esc(e.ref)}">Approve &amp; enroll</a>` : '']))
         + '<p class="ad-note">Pending \u2192 Verified \u2192 Enrolled. Each step is recorded in the audit trail.</p>';
     } else {
-      body = table(['Student', 'Class Offering', 'Section', 'Date Added', 'Status'], [['Dela Cruz, Carlo Miguel', 'ITP3112R', '3B', 'Aug 12', badge('ok', 'Enrolled')], ['Santos, Maria', 'ITP3111R', '3B', 'Aug 13', badge('warn', 'Full, override needed')]])
-        + '<p class="ad-note">Duplicate enrollment in the same class is blocked. Enrolling past capacity needs a recorded override.</p>';
+      // Recent class enrollment changes; a class can only be added once the term enrollment is Enrolled
+      const termOf = (no) => (d.enrollments.find((e) => e.no === no) || {}).status;
+      const recent = [['2024-10477', 'Dela Cruz, Carlo Miguel', 'ITP3112R', '3B', '2026-08-12'], ['2024-11502', 'Santos, Maria', 'ITP3111R', '3B', '2026-08-13']];
+      body = table(['Student', 'Class Offering', 'Section', 'Date Added', 'Status'], recent.map(([no, name, code, sec, date]) => [name, code, sec, fmtDay(date), termOf(no) === 'Enrolled' ? badge('ok', 'Enrolled') : badge('warn', 'Waiting for term enrollment')]))
+        + '<p class="ad-note">A student is added to classes once their term enrollment is Enrolled. Duplicate enrollment in the same class is blocked, and enrolling past capacity needs a recorded override.</p>';
     }
     return `<h1>Admissions &amp; Enrollment</h1>${tabs(['Applications', 'Term Enrollment', 'Class Enrollment'], mtab, 'mtab')}${body}`;
   };
@@ -194,11 +238,11 @@
   pages.attendance = () => {
     const s = staff();
     const rows = (s ? s.attendanceSummary() : []).map((r) => [r.code + ' \u00B7 ' + r.title, r.section, r.faculty, r.held, r.absent, r.late, r.rate == null ? '\u2014' : r.rate.toFixed(1) + '%']);
-    const alerts = (s ? s.attendanceAlerts() : []).slice(0, 8).map((a) => [a.date, a.student, a.type, a.message]);
-    return `<h1>Attendance</h1><p class="ad-sub">Read-only. Assigned faculty encode attendance; the Registrar can review it.</p>
+    const alerts = (s ? s.attendanceAlerts() : []).slice(0, 8).map((a) => [fmtDay(a.date), a.student, a.type, a.message]);
+    return `<h1>Attendance</h1><p class="ad-sub">View only. Each class's faculty member records attendance.</p>
       <h3>Class attendance summary</h3>${table(['Course', 'Section', 'Faculty', 'Meetings held', 'Absences', 'Late', 'Rate'], rows)}
       <h3>Attendance alerts</h3>${table(['Date', 'Student', 'Type', 'Details'], alerts)}
-      <p class="ad-note">Alert thresholds and recipients are configured by ICT Services under System Settings.</p>`;
+      <p class="ad-note">A student is flagged after reaching the absence or late-arrival limit set by ICT Services.</p>`;
   };
 
   /* ---- Academic Records ---- */
@@ -207,12 +251,13 @@
     let body;
     if (rtab === 'Student Records') {
       const me = d.students.find((x) => x.no === DEMO_STUDENT) || d.students[0];
-      body = `<div class="ad-row2" style="grid-template-columns:1fr 160px 160px"><div class="ad-card" style="display:flex;gap:1rem;align-items:center"><span class="ad-ra">${esc(initials(me.name.split(', ').reverse().join(' ')))}</span><div><b style="font-size:1.05rem;margin:0">${esc(me.name)}</b><small style="text-transform:none">${esc(me.no)} \u00B7 ${esc(me.program)} \u00B7 ${esc(me.year)} Year</small></div></div><div class="ad-card"><small>Term GPA</small><b>${f2(sm.gwa)}</b></div><div class="ad-card"><small>Cumulative GPA</small><b>${f2(SIMSData.cumulativeGwa())}</b></div></div>
-        ${table(['Course', 'Units', 'Finals', 'Remarks', 'Status'], sm.subjects.map((x) => SIMSData.raw.subject(x.id)).map((x) => [x.code + ' \u00B7 ' + x.title, x.units.toFixed(1), x.status === 'inc' ? 'INC' : f2(x.finalGrade), x.status === 'inprogress' ? 'In progress' : x.status, finalState(x)]))}<p class="ad-note">Posted grades change only through the controlled correction process.</p>`;
+      body = `<div class="ad-row2" style="grid-template-columns:1fr 160px 160px"><div class="ad-card" style="display:flex;gap:1rem;align-items:center"><span class="ad-ra">${esc(initials(me.name.split(', ').reverse().join(' ')))}</span><div><b style="font-size:1.05rem;margin:0">${esc(me.name)}</b><small style="text-transform:none">${esc(me.no)} \u00B7 ${esc(me.program)} \u00B7 ${esc(me.year)} Year</small></div></div><div class="ad-card"><small>Term GWA</small><b>${f2(sm.gwa)}</b></div><div class="ad-card"><small>Cumulative GWA</small><b>${f2(SIMSData.cumulativeGwa())}</b></div></div>
+        ${table(['Course', 'Units', 'Finals', 'Remarks', 'Status'], sm.subjects.map((x) => SIMSData.raw.subject(x.id)).map((x) => [x.code + ' \u00B7 ' + x.title, x.units.toFixed(1), x.status === 'inc' ? 'INC' : f2(x.finalGrade), cap(x.status), finalState(x)]))}<p class="ad-note">Posted grades change only through the controlled correction process.</p>`;
     } else if (rtab === 'Grade Management') {
       body = gradePanels();
     } else if (rtab === 'Academic Setup') {
-      body = tabs(Object.keys(d.setup), stab, 'stab') + table(['Code', 'Name', 'Detail', 'Status'], d.setup[stab]) + '<p class="ad-note">View only. Departments, programs and terms follow school policy; schedules are managed by Department Heads and EdTech Services.</p>';
+      const SETUP_COLS = { Departments: ['Code', 'Name', 'Head', 'Status'], Programs: ['Code', 'Name', 'Department', 'Status'], Courses: ['Code', 'Title', 'Units', 'Status'], 'Academic Terms': ['Academic Year', 'Semester', 'Dates', 'Status'], Rooms: ['Code', 'Name', 'Capacity', 'Status'] };
+      body = tabs(Object.keys(d.setup), stab, 'stab') + table(SETUP_COLS[stab] || ['Code', 'Name', 'Detail', 'Status'], d.setup[stab]) + '<p class="ad-note">View only. Departments, programs and terms follow school policy; schedules are managed by Department Heads and EdTech Services.</p>';
     } else {
       const cl = staff() ? staff().classes() : [];
       body = `${table(['Course', 'Section', 'Faculty', 'Schedule', 'Room', 'Enrolled'], cl.map((c) => [c.code + ' \u00B7 ' + c.title, c.section, staff().userName(c.faculty), c.day.slice(0, 3) + ' ' + c.start + '\u2013' + c.end, c.room, c.size + ' / ' + c.capacity]))}
@@ -411,12 +456,13 @@
 
   /* ---- Document Management ---- */
   pages.documents = () => {
-    const d = docs();
-    const rows = d.requirements.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.file ? esc(r.file.name) : '\u2014'}</td><td>${badge(r.status === 'verified' ? 'ok' : r.status === 'review' ? 'info' : r.status === 'rejected' ? 'risk' : 'warn', r.status)}</td><td>${esc(r.updated || '\u2014')}</td>
+    const d = docs(), stu = reg().students.find((x) => x.no === DEMO_STUDENT);
+    const who = stu ? `${esc(stu.name)}<br><small>${esc(stu.no)}</small>` : '\u2014';
+    const rows = d.requirements.map((r) => `<tr><td>${who}</td><td>${esc(r.name)}${r.file ? `<br><small>${esc(r.file.name)}</small>` : ''}</td><td>${badge(r.status === 'verified' ? 'ok' : r.status === 'review' ? 'info' : r.status === 'rejected' ? 'risk' : 'warn', cap(r.status))}</td><td>${esc(fmtDay(r.updated))}</td>
       <td>${r.status === 'review' ? `<a data-doc="verified" data-id="${esc(r.id)}">Verify</a> <a data-doc="rejected" data-id="${esc(r.id)}">Reject</a>` : ''}</td></tr>`).join('');
-    const req = Object.keys(d.requests).map((id) => `<li>${esc(DOC_REQ[id] || id)} <small>\u00B7 requested ${esc(d.requests[id])}</small> ${id === 'tor' ? '<a data-x="rp-open" data-v="tor">Generate TOR</a> ' : ''}<a data-rel="${esc(id)}">Mark released</a></li>`).join('');
-    return `<h1>Document Management</h1><h3>Verification queue</h3>
-      <table class="ad-table"><tr><th>Document</th><th>File</th><th>Status</th><th>Updated</th><th>Action</th></tr>${rows}</table>
+    const req = Object.keys(d.requests).map((id) => `<li>${esc(DOC_REQ[id] || id)} <small>\u00B7 ${stu ? esc(fullName(stu.name)) + ' \u00B7 ' : ''}requested ${esc(fmtDay(d.requests[id]))}</small> ${id === 'tor' ? '<a data-x="rp-open" data-v="tor">Generate TOR</a> ' : ''}<a data-rel="${esc(id)}">Mark released</a></li>`).join('');
+    return `<h1>Document Management</h1><p class="ad-sub">Verify submitted requirements and release requested documents.</p><h3>Verification queue</h3>
+      <table class="ad-table"><tr><th>Student</th><th>Document</th><th>Status</th><th>Updated</th><th>Action</th></tr>${rows || '<tr><td colspan="5">Nothing to verify.</td></tr>'}</table>
       <h3>Official document requests</h3><ul class="ad-list">${req || '<li>No pending requests.</li>'}</ul>`;
   };
 
@@ -424,22 +470,34 @@
   pages.activity = () => {
     const l = staff() ? staff().auditFor(acct.username, 60) : [];
     return `<h1>Activity Log</h1><p class="ad-sub">Your own recent activity. Full audit trails are available to ICT Services.</p>
-      ${table(['Time', 'Module', 'Action', 'Description'], l.map((x) => [x.ts, x.mod, x.act, x.desc]))}
+      ${table(['Time', 'Module', 'Action', 'Description'], l.map((x) => [fmtStamp(x.ts), x.mod, x.act, x.desc]))}
       <p class="ad-note">Entries are append-only and never store passwords.</p>`;
   };
 
-  /* ---- Account Settings ---- */
-  pages.settings = () => {
-    const m = settings();
-    return `<h1>Account Settings</h1><div class="ad-panel"><h3>Contact details</h3><div class="ad-grid"><label>Work email<input id="s_email" value="${esc(m.email)}"></label><label>Mobile<input id="s_mobile" value="${esc(m.mobile)}"></label><label>Office<input id="s_office" value="${esc(m.office)}"></label></div><p><button class="ad-btn" data-x="savecontact">Save changes</button></p></div>
-    <div class="ad-panel"><h3>Change password</h3><div class="ad-grid"><label>Current<input id="p_cur" type="password"></label><label>New<input id="p_new" type="password"></label><label>Confirm<input id="p_con" type="password"></label></div><p><button class="ad-btn" data-x="savepw">Update password</button></p><p class="ad-note">Use at least 8 characters with upper and lower case letters, a number and a symbol.</p></div>
-    <div class="ad-panel"><h3>Alerts</h3>${[['queue', 'Queue alerts'], ['grades', 'Grade submissions'], ['login', 'Login alerts']].map(([k, l]) => `<label><input type="checkbox" class="nt" value="${k}" ${m.notif[k] ? 'checked' : ''}> ${l}</label> `).join('')}<p><button class="ad-btn" data-x="savenotif">Save alerts</button></p></div>`;
-  };
+  /* ---- My Account (same as the staff portal: profile is managed by ICT) ---- */
+  const pwBox = (id, ac) => `<div class="pw-wrap"><input id="${id}" type="password" autocomplete="${ac}" /><button type="button" class="pw-toggle" data-x="pwtoggle" data-v="${id}" aria-pressed="false" aria-label="Show password">Show</button></div>`;
+  pages.settings = () => `<div class="staff-panel"><div class="dm-head"><h1>My Account</h1><p class="ad-sub">Your staff profile is managed by ICT Services. You can change your own password here.</p></div>
+      <div class="staff-split staff-split-even">
+        <div class="dash-card dm-card staff-card"><div class="staff-identity"><div class="staff-big-avatar">${esc(initials(acct.name))}</div><h3>${esc(acct.name)}</h3><p class="dm-modal-note">${esc(acct.title)}</p></div>
+          <dl class="set-info">
+            <div><dt>Role</dt><dd>Registrar</dd></div><div><dt>Employee no.</dt><dd>${esc(acct.employeeNo)}</dd></div>
+            <div><dt>Office</dt><dd>${esc(acct.dept)}</dd></div><div><dt>Work email</dt><dd>${esc(acct.email)}</dd></div>
+            <div><dt>Contact</dt><dd>${esc(acct.contact)}</dd></div><div><dt>Date hired</dt><dd>${esc(fmtDay(acct.hired))}</dd></div>
+          </dl></div>
+        <form id="rgPwForm" class="dash-card dm-card staff-card staff-form" novalidate>
+          <h3 class="adm-sec-title">Change password</h3>
+          <div class="set-field"><label for="p_cur">Current password</label>${pwBox('p_cur', 'current-password')}</div>
+          <div class="set-field"><label for="p_new">New password</label>${pwBox('p_new', 'new-password')}<small class="set-hint">At least ${SIMSAuth.policy().minPw} characters with upper and lower case letters, a number and a symbol.</small></div>
+          <div class="set-field"><label for="p_con">Confirm new password</label>${pwBox('p_con', 'new-password')}</div>
+          <small class="set-error" id="p_err" role="alert"></small>
+          <div class="set-actions"><button type="button" class="btn-solid" data-x="savepw">Update password</button></div>
+        </form>
+      </div></div>`;
 
   /* =====================================================
      SHELL
   ===================================================== */
-  const NAV = [['home', 'Home'], ['students', 'Student Profiles'], ['admissions', 'Admissions & Enrollment'], ['attendance', 'Attendance'], ['records', 'Academic Records'], ['reports', 'Reports & Analytics Generation'], ['documents', 'Document Management'], ['activity', 'Activity Log'], ['settings', 'Account Settings']];
+  const NAV = [['home', 'Home'], ['students', 'Student Profiles'], ['admissions', 'Admissions & Enrollment'], ['attendance', 'Attendance'], ['records', 'Academic Records'], ['reports', 'Reports & Analytics Generation'], ['documents', 'Document Management'], ['activity', 'Activity Log'], ['settings', 'My Account']];
   // Sub-pages highlight their parent in the sidebar
   const PARENT = { register: 'students', profile: 'students', corrections: 'students' };
 
@@ -457,7 +515,7 @@
     const cur = NAV.find((n) => n[0] === page) || NAV.find((n) => n[0] === (PARENT[page] || 'home'));
     const logo = document.querySelector('.nav-logo');
     root.innerHTML = `<header class="top-nav"><div class="nav-brand">${logo ? `<img class="nav-logo" src="${esc(logo.getAttribute('src'))}" alt="">` : ''}<span class="nav-title">BITS-SIMS</span><span class="staff-role-chip">Registrar Portal</span></div>
-      <div class="nav-user-area"><span class="nav-page-label">${esc(cur[0] === 'home' ? 'Dashboard' : cur[1])}</span><span class="nav-divider"></span><span class="ad-ra" title="${esc(acct.name)}">${esc(initials(acct.name))}</span></div></header>
+      <div class="nav-user-area"><span class="nav-page-label">${esc(cur[1])}</span><span class="nav-divider"></span><span class="ad-ra" title="${esc(acct.name)}">${esc(initials(acct.name))}</span></div></header>
       <div class="app-layout"><nav class="sidebar"><ul class="sidebar-menu">${NAV.map((n) => `<li><a href="#" class="sidebar-item ${n[0] === cur[0] ? 'active' : ''}" data-go="${n[0]}">${icon(n[0])}<span>${esc(n[1])}</span></a></li>`).join('')}
       <li><a href="#" class="sidebar-item logout-link" data-go="logout">${icon('logout')}<span>Log Out</span></a></li></ul></nav>
       <main class="dashboard-main"><div class="dashboard-panel ad-body">${pages[page]()}</div></main></div>`;
@@ -476,25 +534,31 @@
     if (d.cor) {                               // approve / reject a profile correction
       const all = corrections(), x = all.find((c) => c.id === d.id);
       const remarks = ($('#adRemarks') || {}).value || '';
-      if (d.cor === 'rejected' && !remarks.trim()) return alert('Add review remarks before rejecting.');
+      if (d.cor === 'rejected' && !remarks.trim()) return toast('Add review remarks before rejecting.', 'error');
       x.status = d.cor; x.remarks = remarks; x.reviewedBy = acct.username; x.reviewed = today();
       if (x.status === 'approved') { const p = rd(K.prof, {}); p[x.field] = x.next; wr(K.prof, p); }
       wr(K.cor, all); log(`Profile correction ${x.status}: ${x.label} for ${x.student}`, 'Profile Management', 'ProfileCorrectionRequests', x.id, x.status === 'approved' ? 'APPROVE' : 'UPDATE');
+      toast(`Correction ${x.status}.`, x.status === 'approved' ? 'success' : 'info');
     } else if (d.app) {                        // admission decision
-      const ap = adm(), a = ap.applications.find((i) => i.id === d.id);
-      let remarks = '';
-      if (d.app === 'rejected') { remarks = prompt('Reason for rejection (shown to the applicant):'); if (remarks === null) return; }
-      a.status = d.app; a.verified = a.verified || today(); a.verifiedTime = a.verifiedTime || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      if (a.status !== 'review') { a.decision = today(); a.remarks = remarks || (a.status === 'accepted' ? 'Congratulations on your admission. Please continue to enrollment.' : ''); }
-      wr(K.adm, ap); log(`Application ${a.id} set to ${a.status}`, 'Registration', 'AdmissionApplications', a.id, a.status === 'review' ? 'UPDATE' : 'APPROVE');
+      const reason = d.app === 'rejected' ? prompt('Reason for rejection (shown to the applicant):') : '';
+      if (reason === null) return;
+      const decide = (a) => {
+        a.status = d.app; a.verified = a.verified || today(); a.verifiedTime = a.verifiedTime || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (a.status !== 'review') { a.decision = today(); a.remarks = reason || (a.status === 'accepted' ? 'Congratulations on your admission. Please continue to enrollment.' : ''); }
+        log(`Application ${a.id} set to ${cap(a.status)}`, 'Registration', 'AdmissionApplications', a.id, a.status === 'review' ? 'UPDATE' : 'APPROVE');
+        toast(`${a.id}: ${cap(a.status)}.`);
+      };
+      const ap = adm(), mine = ap.applications.find((i) => i.id === d.id);
+      if (mine) { decide(mine); wr(K.adm, ap); }
+      else { const rg = reg(), x = (rg.applicants || []).find((i) => i.id === d.id); if (!x) return; decide(x); saveReg(rg); }
     } else if (d.doc) {                        // verify / reject an uploaded requirement
       const dc = docs(), r = dc.requirements.find((i) => i.id === d.id);
       let note = '';
       if (d.doc === 'rejected') { note = prompt('Reason for rejection (shown to the student):'); if (note === null) return; }
       Object.assign(r, { status: d.doc, note, updated: today() });
-      wr(K.docs, dc); log(`Document ${r.name} ${r.status}`, 'Documents', 'StudentDocuments', r.id, 'APPROVE');
+      wr(K.docs, dc); log(`Document ${r.name} ${r.status}`, 'Documents', 'StudentDocuments', r.id, 'APPROVE'); toast(`${r.name} ${r.status}.`, r.status === 'verified' ? 'success' : 'info');
     } else if (d.rel) {                        // official document request released
-      const dc = docs(); delete dc.requests[d.rel]; wr(K.docs, dc); log(`${DOC_REQ[d.rel]} released`, 'Documents', 'StudentDocuments', d.rel, 'EXPORT');
+      const dc = docs(); delete dc.requests[d.rel]; wr(K.docs, dc); log(`${DOC_REQ[d.rel]} released`, 'Documents', 'StudentDocuments', d.rel, 'EXPORT'); toast(`${DOC_REQ[d.rel]} marked released.`);
     } else if (d.x) {
       if (!doX(d.x, d.v)) return;
     } else return;
@@ -512,44 +576,60 @@
     else if (a === 'stab') stab = v;
     else if (a === 'mtab') mtab = v;
     else if (a === 'archive' || a === 'restore') {
-      const s = d.students.find((x) => x.no === v); s.status = a === 'archive' ? 'Archived' : 'Active'; saveReg(d);
-      log(`Student ${v} ${s.status}`, 'Registration', 'Students', v, 'UPDATE');
+      const s = d.students.find((x) => x.no === v); if (!s) return false;
+      const doIt = () => {
+        const rg = reg(), st = rg.students.find((x) => x.no === v), before = st.status;
+        if (a === 'archive') { st.prevStatus = st.status; st.status = 'Archived'; } else { st.status = st.prevStatus || 'Active'; delete st.prevStatus; }
+        saveReg(rg); log(`Student ${v} ${st.status === 'Archived' ? 'archived' : 'restored'}`, 'Registration', 'Students', v, 'UPDATE');
+        render(); toast(`${fullName(st.name)} ${a === 'archive' ? 'archived' : 'restored (' + st.status + ')'}.`, a === 'archive' ? 'info' : 'success');
+        void before;
+      };
+      if (a === 'archive') ask('Archive student?', `${fullName(s.name)} (${s.no}) will be marked Archived. The record is kept and can be restored.`, 'Archive', doIt, true);
+      else doIt();
+      return false;
     } else if (a === 'savestu') {
-      if (!val('f_first').trim() || !val('f_last').trim()) { alert('First and last name are required.'); return false; }
+      if (!val('f_first').trim() || !val('f_last').trim()) { toast('First and last name are required.', 'error'); return false; }
       const no = '2026-' + String(d.students.filter((s) => s.no.startsWith('2026-')).length + 1).padStart(4, '0');
       const name = `${val('f_last').trim()}, ${val('f_first').trim()}${val('f_middle').trim() ? ' ' + val('f_middle').trim() : ''}`;
       d.students.push({ no, name, program: val('f_program'), year: val('f_year'), status: 'Active', dept: val('f_dept'), admission: val('f_admission'), email: val('f_email'), mobile: val('f_mobile'), city: val('f_city'), dob: val('f_dob'), gname: val('f_gname'), gnum: val('f_gnum'), ename: val('f_ename'), enum: val('f_enum') });
-      d.enrollments.push({ ref: 'ENR-' + String(d.enrollments.length + 1).padStart(4, '0'), student: name, no, term: '1st Sem 2026-27', program: val('f_program'), year: val('f_year'), units: '\u2014', status: 'Pending' });
-      saveReg(d); log(`Registered student ${no}`, 'Registration', 'Students', no, 'CREATE'); fl = { q: '', st: '' }; go('students'); alert('Student registered: ' + no); return false;
+      d.enrollments.push({ ref: 'ENR-' + String(d.enrollments.length + 1).padStart(4, '0'), student: name, no, term: SIMSData.termLabel(SIMSData.currentTerm()), program: val('f_program'), year: val('f_year'), units: '\u2014', status: 'Pending' });
+      saveReg(d); log(`Registered student ${no}`, 'Registration', 'Students', no, 'CREATE'); fl = { q: '', st: '' }; go('students'); toast('Student registered: ' + no); return false;
     } else if (a === 'enr') {
       const e = d.enrollments.find((x) => x.ref === v); if (!e) return false;
       e.status = e.status === 'Pending' ? 'Verified' : 'Enrolled'; saveReg(d);
-      log(`Enrollment ${e.ref} ${e.status.toLowerCase()}`, 'Enrollment', 'StudentEnrollments', e.ref, e.status === 'Enrolled' ? 'APPROVE' : 'UPDATE');
+      log(`Enrollment ${e.ref} ${e.status.toLowerCase()}`, 'Enrollment', 'StudentEnrollments', e.ref, e.status === 'Enrolled' ? 'APPROVE' : 'UPDATE'); toast(`${e.ref} ${e.status.toLowerCase()}.`);
     } else if (a === 'sheet-post' || a === 'sheet-return') {
       const g = sheets()[Number(v)]; if (!g || g.status !== 'Approved') return false;
       let note = '';
-      if (a === 'sheet-return') { note = prompt('Reason for returning the grades to the faculty:'); if (note === null) return false; if (!note.trim()) { alert('A reason is required.'); return false; } }
+      if (a === 'sheet-return') { note = prompt('Reason for returning the grades to the faculty:'); if (note === null) return false; if (!note.trim()) { toast('A reason is required.', 'error'); return false; } }
       staff().setGradeStatus(g.classId, g.period, a === 'sheet-post' ? 'Posted' : 'Returned', acct.username, note);
+      toast(a === 'sheet-post' ? `${g.code} grades posted.` : `${g.code} grades returned to the faculty.`, a === 'sheet-post' ? 'success' : 'info');
     } else if (a === 'gc-apply' || a === 'gc-reject') {
       const x = gradeCorrections().find((y) => y.id === v); if (!x) return false;
       let note = '';
-      if (a === 'gc-reject') { note = prompt('Reason for rejecting the correction (shown to the faculty):'); if (note === null) return false; if (!note.trim()) { alert('A reason is required.'); return false; } }
-      else if (!confirm(`Apply correction ${x.id}? ${x.name}'s ${x.code} grade changes from ${gradeTxt(x.from)} to ${gradeTxt(x.to)}.`)) return false;
-      const r = staff().decideCorrection(v, a === 'gc-apply' ? 'apply' : 'reject', acct.username, note);
-      if (!r.ok) { alert(r.message); return false; }
+      const decide = () => {
+        const r = staff().decideCorrection(v, a === 'gc-apply' ? 'apply' : 'reject', acct.username, note);
+        if (!r.ok) { toast(r.message, 'error'); return; }
+        render(); toast(a === 'gc-apply' ? `Correction ${x.id} applied.` : `Correction ${x.id} rejected.`, a === 'gc-apply' ? 'success' : 'info');
+      };
+      if (a === 'gc-reject') { note = prompt('Reason for rejecting the correction (shown to the faculty):'); if (note === null) return false; if (!note.trim()) { toast('A reason is required.', 'error'); return false; } decide(); return false; }
+      ask('Apply correction?', `${x.name}'s ${x.code} grade changes from ${gradeTxt(x.from)} to ${gradeTxt(x.to)}.`, 'Apply correction', decide);
+      return false;
     } else if (a.startsWith('rp-')) {
       return reportAction(a, v);
-    } else if (a === 'savecontact') {
-      const m = settings(); Object.assign(m, { email: val('s_email'), mobile: val('s_mobile'), office: val('s_office') }); saveSettings(m); alert('Saved.'); return false;
+    } else if (a === 'pwtoggle') {
+      const inp = $('#' + v), btn = document.querySelector(`[data-x="pwtoggle"][data-v="${v}"]`); if (!inp) return false;
+      const show = inp.type === 'password'; inp.type = show ? 'text' : 'password';
+      if (btn) { btn.textContent = show ? 'Hide' : 'Show'; btn.setAttribute('aria-pressed', String(show)); btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password'); }
+      return false;
     } else if (a === 'savepw') {
-      const n = val('p_new'), problem = SIMSAuth.passwordProblem(n);
-      if (!val('p_cur')) { alert('Enter your current password.'); return false; }
-      if (!SIMSAuth.verify(acct, val('p_cur'))) { alert('Current password is incorrect.'); return false; }
-      if (problem) { alert(problem); return false; }
-      if (n !== val('p_con')) { alert('Passwords do not match.'); return false; }
-      SIMSAuth.setPassword(acct.username, n); log('Changed own password', 'Authentication', 'Users', acct.username, 'UPDATE'); alert('Password updated.'); return false;
-    } else if (a === 'savenotif') {
-      const m = settings(); document.querySelectorAll('.nt').forEach((c) => { m.notif[c.value] = c.checked; }); saveSettings(m); alert('Saved.'); return false;
+      const n = val('p_new'), problem = SIMSAuth.passwordProblem(n), err = (m) => { $('#p_err').textContent = m; return false; };
+      if (!val('p_cur')) return err('Enter your current password.');
+      if (!SIMSAuth.verify(acct, val('p_cur'))) return err('Current password is incorrect.');
+      if (problem) return err(problem);
+      if (n !== val('p_con')) return err('Passwords do not match.');
+      SIMSAuth.setPassword(acct.username, n); log('Changed own password', 'Authentication', 'Users', acct.username, 'UPDATE');
+      $('#rgPwForm').reset(); $('#p_err').textContent = ''; toast('Password updated.'); return false;
     } else return false;
     return true;
   }
@@ -578,7 +658,7 @@
 
   function open(account) {
     acct = account; page = 'home'; sel = null; fl = { q: '', st: '' }; tab = 'Overview'; rtab = 'Student Records'; mtab = 'Applications';
-    const root = $('#registrarView'); root.classList.remove('hidden'); bind(root);
+    const root = $('#registrarView'); root.classList.remove('hidden'); bind(root); ensureChrome();
     log('Successful login', 'Authentication', 'Users', acct.username, 'LOGIN');
     SIMSAuth.watchIdle(close);
     render();
