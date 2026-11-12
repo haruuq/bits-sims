@@ -24,7 +24,7 @@
      bits-sims-corrections  student name-change requests  -> Profile Corrections
      bits-sims-documents    uploads + COR/COE/TOR requests -> Document Management
      bits-sims-admissions   applications                   -> Admissions & Enrollment
-     bits-sims-academic     grades (via SIMSData)          -> Student grade releases
+     bits-sims-academic     grades (via SIMSData)          -> transcripts, report cards, analytics
      bits-sims-profile      official profile (on approval)
      bits-sims-registry     students + setup (registry.js)
    Faculty grade sheets and class offerings come from staff.js
@@ -69,14 +69,8 @@
   const adm = () => rd(K.adm, { applications: [] });
   const periods = () => SIMSData.rules().gradingPeriods.map((p) => p.key).concat('final');
   // Student-portal grade releases (what the student sees once POSTED)
-  function gradeQueue() {
-    const out = [];
-    SIMSData.get().subjects.forEach((s) => periods().forEach((k) => {
-      const st = s.gradeStatus && s.gradeStatus[k];
-      if (st === 'submitted' || st === 'approved') out.push({ s, k, st, v: k === 'final' ? s.finalGrade : s.grades[k] });
-    }));
-    return out;
-  }
+  // Grade corrections waiting for the Registrar (Faculty -> Dept Head -> Registrar)
+  const gradeCorrections = () => (staff() && staff().corrections ? staff().corrections() : []);
   // Faculty grade sheets that went Faculty -> Dept Head (see staff.js)
   const sheets = () => (staff() ? staff().gradeSheets() : []);
 
@@ -87,6 +81,7 @@
   const initials = (n) => n.replace(/^(Dr\.|Prof\.)\s*/i, '').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
   const oldest = (dates) => { const t = dates.filter(Boolean).map((x) => new Date(x).getTime()).filter((n) => n); if (!t.length) return '\u2014'; const n = Math.max(0, Math.round((Date.now() - Math.min(...t)) / 864e5)); return n + (n === 1 ? ' day' : ' days'); };
   const f2 = (n) => (n == null ? '\u2014' : n.toFixed(2));
+  const gradeTxt = (g) => (g === 'INC' ? 'INC' : typeof g === 'number' ? g.toFixed(2) : '\u2014');
   // Finals only for now: a subject's grade status is the status of its final grade
   const finalState = (x) => (x.finalGrade == null && x.status !== 'inc' ? 'not yet encoded' : (x.gradeStatus && x.gradeStatus.final) || 'posted');
 
@@ -102,7 +97,7 @@
     const cor = corrections().filter((c) => c.status === 'pending');
     const dd = docsD.requirements.filter((r) => r.status === 'review');
     const enrWait = d.enrollments.filter((e) => e.status === 'Pending' || e.status === 'Verified').length;
-    const gqStudent = gradeQueue().length, gqFaculty = sheets().filter((s) => s.status === 'Approved').length;
+    const gqCorr = gradeCorrections().filter((x) => x.status === 'Endorsed').length, gqFaculty = sheets().filter((s) => s.status === 'Approved').length;
     const act = (staff() ? staff().auditFor(acct.username, 20) : []).filter((x) => x.act !== 'LOGIN' && x.act !== 'LOGOUT').slice(0, 4);
     const att = SIMSData.get().subjects.map((x) => SIMSData.attendanceRate(x.attendance)).filter((n) => n != null), rate = att.length ? Math.round(att.reduce((a, b) => a + b, 0) / att.length) : 0;
     const now = new Date(), first = new Date(now.getFullYear(), now.getMonth(), 1).getDay(), days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -112,7 +107,7 @@
       ['Term enrollments to verify', enrWait, '\u2014', 'admissions'],
       ['Profile correction requests', cor.length, oldest(cor.map((c) => c.date)), 'corrections'],
       ['Documents awaiting verification', dd.length + Object.keys(docsD.requests).length, oldest(dd.map((r) => r.updated).concat(Object.values(docsD.requests))), 'documents'],
-      ['Grades awaiting posting', gqStudent + gqFaculty, '\u2014', 'records']
+      ['Grades and corrections awaiting posting', gqCorr + gqFaculty, '\u2014', 'records']
     ];
     return `<div class="ad-stats" style="grid-template-columns:repeat(5,1fr)">${[['Total students', d.students.length], ['Active students', d.students.filter((s) => s.status === 'Active').length], ['Departments', d.setup.Departments.length], ['Programs', d.setup.Programs.length], ['Enrolled this term', d.enrollments.filter((e) => e.status === 'Enrolled').length]].map((r) => `<div class="ad-card"><small>${r[0]}</small><b>${r[1]}</b></div>`).join('')}</div>
       <div class="ad-card" style="margin-bottom:1rem"><small>Overall attendance rate</small><b>${rate}%</b></div>
@@ -145,7 +140,13 @@
     const d = reg(), s = d.students.find((x) => x.no === viewNo) || d.students[0], real = s.no === DEMO_STUDENT;
     const T = ['Overview', 'General Information', 'Contact Information', 'Guardian Information', 'Grades', 'Documents'];
     let body;
-    if (tab === 'Grades') body = real ? table(['Course', 'Finals', 'Status'], SIMSData.get().subjects.filter((x) => x.termId === '2627-1').map((x) => [x.code, x.status === 'inc' ? 'INC' : x.finalGrade == null ? '\u2014' : f2(x.finalGrade), finalState(x)])) : '<p>No grades on file.</p>';
+    if (tab === 'Grades') {
+      const r = SIMSData.recordFor(s.no);
+      body = (r.terms.length ? r.terms.map((t) => `<h3>${esc(SIMSData.termLabel(t.term))} \u00B7 GWA ${f2(t.gwa)} \u00B7 ${esc(t.standing)}</h3>${table(['Course', 'Units', 'Final grade', 'Remarks'], t.subjects.map((g) => [g.code + ' \u00B7 ' + g.title, g.units.toFixed(1), g.status === 'inc' ? 'INC' : f2(g.grade), g.status]))}`).join('')
+          + `<p class="ad-note">Cumulative GWA ${f2(r.cumulative)} \u00B7 ${r.unitsEarned.toFixed(1)} units earned. Only posted grades are shown.</p>` : '<p>No posted grades yet.</p>')
+        + (real ? `<h3>Current term (in progress)</h3>${table(['Course', 'Finals', 'Status'], SIMSData.get().subjects.filter((x) => x.termId === SIMSData.currentTerm().id).map((x) => [x.code, x.status === 'inc' ? 'INC' : x.finalGrade == null ? '\u2014' : f2(x.finalGrade), finalState(x)]))}` : '')
+        + `<p><button class="ad-btn" data-x="rp-open" data-v="tor">Transcript of Records</button> <button class="ad-btn alt" data-x="rp-open" data-v="reportcard">Report Card</button></p>`;
+    }
     else if (tab === 'Documents') body = real ? table(['Document', 'Status'], docs().requirements.map((r) => [r.name, r.status])) : '<p>No documents on file.</p>';
     else body = table(['Field', 'Value'], tab === 'Contact Information' ? [['Email', s.email || '\u2014'], ['Mobile', s.mobile || '\u2014'], ['City', s.city || '\u2014']]
       : tab === 'General Information' ? [['Admission type', s.admission], ['Department', s.dept], ['Date of birth', s.dob || '\u2014']]
@@ -224,31 +225,196 @@
     const sh = sheets();
     const fRows = sh.map((g, i) => [g.code + ' \u00B7 ' + g.title, g.section, g.faculty, g.period, badge(g.status === 'Posted' ? 'ok' : g.status === 'Approved' ? 'info' : g.status === 'Returned' ? 'risk' : 'warn', g.status === 'Approved' ? 'Approved by Dept Head' : g.status),
       g.status === 'Approved' ? `<a data-x="sheet-post" data-v="${i}">Post official</a><a data-x="sheet-return" data-v="${i}">Return</a>` : g.status === 'Submitted' ? '<small>With Department Head</small>' : '']);
-    const q = gradeQueue();
-    const sRows = q.map((g, i) => [g.s.code, g.s.title, g.k, g.v == null ? '\u2014' : Number(g.v).toFixed(2), badge(g.st === 'approved' ? 'info' : 'warn', g.st), `<a data-gr="${i}">${g.st === 'submitted' ? 'Approve' : 'Post official'}</a>`]);
+    const gc = gradeCorrections();
+    const cRows = gc.map((x) => [x.id, x.name + ' (' + x.sn + ')', x.code + ' \u00B7 ' + x.section, gradeTxt(x.from), gradeTxt(x.to), x.reason,
+      badge(x.status === 'Applied' ? 'ok' : x.status === 'Endorsed' ? 'info' : x.status === 'Rejected' ? 'risk' : 'warn', x.status === 'Endorsed' ? 'Endorsed by Dept Head' : x.status),
+      x.status === 'Endorsed' ? `<a data-x="gc-apply" data-v="${esc(x.id)}">Apply correction</a> <a data-x="gc-reject" data-v="${esc(x.id)}">Reject</a>` : x.status === 'Requested' ? '<small>With Department Head</small>' : '']);
     return `<h3>Faculty grade sheets</h3>${table(['Course', 'Section', 'Faculty', 'Period', 'Status', 'Action'], fRows)}
-      <p class="ad-note">Faculty submit \u2192 Department Head approves \u2192 the Registrar posts. Posted grades change only through a correction process.</p>
-      <h3>Student portal releases</h3>${table(['Code', 'Course', 'Period', 'Grade', 'Status', 'Action'], sRows)}
-      <p class="ad-note">Students only see grades once they are posted.</p>`;
+      <p class="ad-note">Faculty submit \u2192 Department Head approves \u2192 the Registrar posts. Students see a grade only once it is posted.</p>
+      <h3>Grade corrections</h3>${table(['ID', 'Student', 'Course', 'Posted', 'Corrected', 'Reason', 'Status', 'Action'], cRows)}
+      <p class="ad-note">A posted grade only changes through a correction: Faculty request it with a reason \u2192 the Department Head endorses \u2192 the Registrar applies it. Every step is in the audit trail.</p>`;
   }
 
-  /* ---- Reports (CSV export, logged) ---- */
-  const REP = {
-    master: ['Student Master List', () => [['Student No', 'Name', 'Program', 'Year', 'Status']].concat(reg().students.map((s) => [s.no, s.name, s.program, s.year, s.status]))],
-    status: ['Student Status Report', () => [['Status', 'Students']].concat(Object.entries(reg().students.reduce((a, s) => (a[s.status] = (a[s.status] || 0) + 1, a), {})))],
-    admission: ['Student Admission Report', () => [['App. No.', 'Program', 'Type', 'Term', 'Status']].concat(adm().applications.map((a) => [a.id, a.program, a.type, a.term, a.status]))],
-    enroll: ['Enrollment Summary', () => [['Program', 'Students']].concat(Object.entries(reg().students.reduce((a, s) => (a[s.program] = (a[s.program] || 0) + 1, a), {})))],
-    classlist: ['Class List', () => [['Course', 'Section', 'Faculty', 'Enrolled']].concat((staff() ? staff().classes() : []).map((c) => [c.code, c.section, staff().userName(c.faculty), c.size]))],
-    att: ['Attendance Summary', () => [['Course', 'Section', 'Held', 'Absent', 'Late']].concat((staff() ? staff().attendanceSummary() : []).map((r) => [r.code, r.section, r.held, r.absent, r.late]))]
+  /* ---- Reports & Analytics (design reference 6.3, 6.5, 6.6) ----
+     Every report is a view of the shared records (registry, data.js
+     official grades, faculty attendance); none keeps its own copy.
+     Generate -> preview -> Export CSV / Print (PDF). Each generation
+     and export is logged in the audit trail and report history. */
+  const rp = { id: 'master', program: 'all', year: 'all', status: 'all', term: '', student: DEMO_STUDENT, result: null };
+  const ALL = 'all';
+  const regStudent = (no) => reg().students.find((x) => x.no === no);
+  const studentOk = (no) => {
+    const x = regStudent(no);
+    if (!x) return rp.program === ALL && rp.year === ALL && rp.status === ALL;
+    return (rp.program === ALL || x.program === rp.program) && (rp.year === ALL || x.year === rp.year) && (rp.status === ALL || x.status === rp.status);
   };
-  pages.reports = () => `<h1>Reports &amp; Analytics Generation</h1><p class="ad-note">Generate and export reports within your access scope.</p><div class="ad-cards">${Object.entries(REP).map(([k, r]) => `<button class="ad-card" data-x="rep" data-v="${k}"><small>Export CSV</small><b style="font-size:1.1rem">${esc(r[0])}</b></button>`).join('')}</div>`;
+  const filtStudents = () => reg().students.filter((x) => studentOk(x.no));
+  const termById = (id) => SIMSData.term(id) || SIMSData.currentTerm();
+  const termName = (id) => SIMSData.termLabel(termById(id));
+  const officialIn = (termId) => SIMSData.officialGrades().filter((g) => g.termId === termId && studentOk(g.studentNo));
+  const fmtPct = (n) => (n == null ? '—' : n.toFixed(1) + '%');
+  const roster = () => (staff() && staff().classRoster ? staff().classRoster() : []);
+  const BANDS = [['1.00–1.50', (g) => g <= 1.5], ['1.75–2.25', (g) => g > 1.5 && g <= 2.25], ['2.50–3.00', (g) => g > 2.25 && g <= 3], ['5.00', (g) => g > 3]];
+
+  function studentDoc(no, termId) {
+    const r = SIMSData.recordFor(no), x = regStudent(no) || { name: r.name || no, program: '', year: '' };
+    const terms = termId ? r.terms.filter((t) => t.term.id === termId) : r.terms;
+    return { r, x, terms };
+  }
+
+  const REP = {
+    master: { name: 'Student Master List', desc: 'Student number, name, program, year level and status.', filters: ['program', 'year', 'status'],
+      build: () => ({ cols: ['Student No', 'Name', 'Program', 'Year', 'Status', 'Admission'], rows: filtStudents().map((x) => [x.no, x.name, x.program, x.year, x.status, x.admission]) }) },
+    status: { name: 'Student Status Report', desc: 'Active, on leave, inactive and other statuses.', filters: ['program', 'year'],
+      build: () => ({ cols: ['Status', 'Students'], rows: Object.entries(filtStudents().reduce((a, x) => (a[x.status] = (a[x.status] || 0) + 1, a), {})) }) },
+    admission: { name: 'Student Admission Report', desc: 'Applications, admission type and decision status.', filters: [],
+      build: () => ({ cols: ['App. No.', 'Program', 'Type', 'Term', 'Status'], rows: adm().applications.map((a) => [a.id, a.program, a.type, a.term, a.status]) }) },
+    enroll: { name: 'Enrollment Summary', desc: 'Term enrollments by program, year level and term.', filters: ['program', 'year'],
+      build: () => {
+        const g = {};
+        reg().enrollments.filter((e) => (rp.program === ALL || e.program === rp.program) && (rp.year === ALL || e.year === rp.year)).forEach((e) => {
+          const k = [e.program, e.year, e.term].join('|'); g[k] = g[k] || { Pending: 0, Verified: 0, Enrolled: 0 }; g[k][e.status] = (g[k][e.status] || 0) + 1;
+        });
+        return { cols: ['Program', 'Year level', 'Term', 'Pending', 'Verified', 'Enrolled', 'Total'], rows: Object.entries(g).map(([k, v]) => [...k.split('|'), v.Pending, v.Verified, v.Enrolled, v.Pending + v.Verified + v.Enrolled]) };
+      } },
+    classlist: { name: 'Student Class List', desc: 'Students in each class offering with section and faculty.', filters: ['program', 'year', 'status'],
+      build: () => ({ cols: ['Course', 'Section', 'Faculty', 'Student No', 'Name'], rows: roster().flatMap((c) => c.students.filter((x) => studentOk(x.sn)).map((x) => [c.code + ' · ' + c.title, c.section, c.faculty, x.sn, x.name])) }) },
+    reportcard: { name: 'Student Report Card', desc: 'One student’s posted grades, units, GWA and standing for a term.', filters: ['student', 'term'], doc: true,
+      build: () => {
+        const { r, x, terms } = studentDoc(rp.student, rp.term || (SIMSData.recordFor(rp.student).terms.slice(-1)[0] || { term: {} }).term.id);
+        const t = terms[0];
+        return { cols: ['Course code', 'Course title', 'Units', 'Final grade', 'Remarks'], rows: t ? t.subjects.map((g) => [g.code, g.title, g.units.toFixed(1), g.status === 'inc' ? 'INC' : f2(g.grade), g.status]) : [],
+          head: [['Student', `${x.name} (${rp.student})`], ['Program', `${x.program} · ${x.year} Year`], ['Term', t ? SIMSData.termLabel(t.term) : 'No posted grades']],
+          foot: t ? [['Term GWA', f2(t.gwa)], ['Academic standing', t.standing]] : [], empty: r.terms.length ? 'No posted grades for this term.' : 'This student has no posted grades yet.' };
+      } },
+    tor: { name: 'Official Transcript of Records', desc: 'Approved academic history: every posted course, units, grades and standing.', filters: ['student'], doc: true,
+      build: () => {
+        const { r, x, terms } = studentDoc(rp.student);
+        return { cols: ['Term', 'Course code', 'Course title', 'Units', 'Final grade', 'Remarks'],
+          rows: terms.flatMap((t) => t.subjects.map((g) => [SIMSData.termLabel(t.term), g.code, g.title, g.units.toFixed(1), g.status === 'inc' ? 'INC' : f2(g.grade), g.status])
+            .concat([['', '', `Term GWA ${f2(t.gwa)} · ${t.standing}`, '', '', '']])),
+          head: [['Student', `${x.name} (${rp.student})`], ['Program', `${x.program} · ${x.year} Year`], ['Status', x.status || '—']],
+          foot: [['Cumulative GWA', f2(r.cumulative)], ['Units earned', r.unitsEarned.toFixed(1)], ['Units failed', r.unitsFailed.toFixed(1)], ['Incomplete (INC)', r.inc]],
+          empty: 'This student has no posted grades yet.' };
+      } },
+    perf: { name: 'Academic Performance Report', desc: 'Grade distribution, average grade and pass rate per course (posted grades).', filters: ['term', 'program', 'year'],
+      build: () => {
+        const by = {};
+        officialIn(rp.term).forEach((g) => { (by[g.code] = by[g.code] || { title: g.title, gs: [] }).gs.push(g.grade); });
+        return { cols: ['Course', 'Title', 'Graded', 'Average', 'Highest', 'Lowest', 'Passed', 'Failed', 'Pass rate', ...BANDS.map((b) => b[0])],
+          rows: Object.entries(by).map(([code, v]) => { const gs = v.gs.filter((g) => typeof g === 'number'), pass = gs.filter((g) => g <= SIMSData.rules().passingGrade).length;
+            return [code, v.title, gs.length, gs.length ? f2(gs.reduce((a, b) => a + b, 0) / gs.length) : '—', gs.length ? f2(Math.min(...gs)) : '—', gs.length ? f2(Math.max(...gs)) : '—', pass, gs.length - pass, gs.length ? fmtPct((pass / gs.length) * 100) : '—', ...BANDS.map((b) => gs.filter(b[1]).length)]; }) };
+      } },
+    standing: { name: 'Academic Standing Report', desc: 'Students classified by term GWA and the school’s standing rules (posted grades).', filters: ['term', 'program', 'year', 'status'],
+      build: () => {
+        const by = {};
+        officialIn(rp.term).forEach((g) => { (by[g.studentNo] = by[g.studentNo] || { name: g.name, subjects: [] }).subjects.push({ ...g, finalGrade: g.grade }); });
+        return { cols: ['Student No', 'Name', 'Program', 'Courses posted', 'Units', 'Term GWA', 'Standing'],
+          rows: Object.entries(by).map(([no, v]) => { const gwa = SIMSData.gwa(v.subjects), x = regStudent(no) || {};
+            return [no, x.name || v.name, x.program || '—', v.subjects.length, v.subjects.reduce((n, g) => n + g.units, 0).toFixed(1), f2(gwa), SIMSData.standing(gwa, v.subjects)]; })
+            .sort((a, b) => (a[5] === '—') - (b[5] === '—') || Number(a[5]) - Number(b[5])) };
+      } },
+    completion: { name: 'Course Completion Report', desc: 'Completed, failed, incomplete and outstanding courses per student.', filters: ['program', 'year', 'status'],
+      build: () => {
+        const cur = SIMSData.currentTerm().id, rows = [];
+        filtStudents().forEach((x) => {
+          const r = SIMSData.recordFor(x.no), all = r.terms.flatMap((t) => t.subjects);
+          const outstanding = x.no === DEMO_STUDENT ? SIMSData.subjectsIn(cur).filter(SIMSData.isOpen).length
+            : roster().filter((c) => c.status !== 'Posted' && c.students.some((y) => y.sn === x.no)).length;
+          if (!all.length && !outstanding) return;
+          rows.push([x.no, x.name, x.program, all.filter((g) => g.status === 'passed').length, r.unitsEarned.toFixed(1), all.filter((g) => g.status === 'failed').length, r.inc, outstanding]);
+        });
+        return { cols: ['Student No', 'Name', 'Program', 'Courses completed', 'Units earned', 'Courses failed', 'Incomplete (INC)', 'Outstanding (in progress)'], rows };
+      } },
+    att: { name: 'Class Attendance Report', desc: 'Meetings held, absences, late arrivals and attendance rate per class.', filters: [],
+      build: () => ({ cols: ['Course', 'Section', 'Faculty', 'Meetings held', 'Absences', 'Late', 'Attendance %'], rows: (staff() ? staff().attendanceSummary() : []).map((r) => [r.code + ' · ' + r.title, r.section, r.faculty, r.held, r.absent, r.late, fmtPct(r.rate)]) }) },
+    absence: { name: 'Student Absence Report', desc: 'Students with accumulated absences, flagged against the alert limit.', filters: ['program', 'year', 'status'], build: () => attFlag('absent') },
+    tardy: { name: 'Tardiness Report', desc: 'Students with repeated late arrivals, flagged against the alert limit.', filters: ['program', 'year', 'status'], build: () => attFlag('late') }
+  };
+  const REP_GROUPS = [['Student Reports', ['master', 'status', 'admission']], ['Enrollment Reports', ['enroll', 'classlist']],
+    ['Academic Reports', ['reportcard', 'tor', 'perf', 'standing', 'completion']], ['Attendance Reports', ['att', 'absence', 'tardy']]];
+
+  function attFlag(kind) {
+    const cfg = staff() && staff().alertConfig ? staff().alertConfig() : { maxAbsences: 3, tardiness: 3 };
+    const limit = kind === 'absent' ? cfg.maxAbsences : cfg.tardiness;
+    const rows = (staff() && staff().attendanceRows ? staff().attendanceRows() : []).filter((r) => (kind === 'absent' ? r.absent : r.late) > 0 && studentOk(r.sn))
+      .map((r) => { const n = kind === 'absent' ? r.absent : r.late, cnt = r.held - r.excused; return [r.sn, r.name, r.code, r.section, n, r.held, fmtPct(cnt ? ((r.held - r.absent - r.excused) / cnt) * 100 : null), n >= limit ? 'Over limit' : 'Watch']; })
+      .sort((a, b) => b[4] - a[4]);
+    return { cols: ['Student No', 'Name', 'Course', 'Section', kind === 'absent' ? 'Absences' : 'Late arrivals', 'Sessions', 'Attendance %', `Flag (limit ${limit})`], rows };
+  }
+
+  function filterBar(def) {
+    const d = reg(), sel = (id, label, list, cur) => `<label>${label}<select id="${id}">${list.map(([v, t]) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+    const uniq = (k) => [...new Set(d.students.map((x) => x[k]))].sort();
+    const f = {
+      program: () => sel('rp_program', 'Program', [[ALL, 'All programs'], ...uniq('program').map((x) => [x, x])], rp.program),
+      year: () => sel('rp_year', 'Year level', [[ALL, 'All year levels'], ...uniq('year').map((x) => [x, x + ' Year'])], rp.year),
+      status: () => sel('rp_status', 'Student status', [[ALL, 'All statuses'], ...uniq('status').map((x) => [x, x])], rp.status),
+      term: () => sel('rp_term', 'Term', SIMSData.terms().slice().reverse().map((t) => [t.id, SIMSData.termLabel(t)]), rp.term),
+      student: () => sel('rp_student', 'Student', d.students.map((x) => [x.no, `${x.name} (${x.no})`]), rp.student)
+    };
+    return def.filters.length ? `<div class="rp-filters">${def.filters.map((k) => f[k]()).join('')}</div>` : '<p class="ad-note">This report has no filters.</p>';
+  }
+
+  function previewHtml() {
+    const r = rp.result; if (!r) return '<p class="ad-note">Choose the filters, then click Generate to preview the report.</p>';
+    const kv = (rows) => rows.length ? `<dl class="rp-kv">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : '';
+    return `<div class="rp-paper"><div class="rp-paper-head"><strong>BITS-SIMS</strong><span>${esc(r.title)}</span><small>${esc(r.sub)}</small></div>
+      ${kv(r.head || [])}${r.rows.length ? table(r.cols, r.rows) : `<p class="ad-note">${esc(r.empty || 'No records match these filters.')}</p>`}${kv(r.foot || [])}
+      <p class="rp-stamp">Generated ${esc(r.ts)} by ${esc(acct.name)} · ${r.rows.length} record(s) · System-generated from official records</p></div>`;
+  }
+
+  pages.reports = () => {
+    const def = REP[rp.id];
+    if (!rp.term) rp.term = SIMSData.currentTerm().id;
+    return `<h1>Reports &amp; Analytics Generation</h1><p class="ad-sub">Generate, preview, print and export reports within your access scope. Reports read the official records; they never keep their own copy.</p>
+      <div class="rp-layout"><nav class="rp-cats">${REP_GROUPS.map(([g, ids]) => `<h4>${esc(g)}</h4>${ids.map((id) => `<button class="rp-item ${id === rp.id ? 'on' : ''}" data-x="rp-pick" data-v="${id}">${esc(REP[id].name)}</button>`).join('')}`).join('')}</nav>
+      <section class="rp-main"><h3>${esc(def.name)}</h3><p class="ad-note">${esc(def.desc)}</p>${filterBar(def)}
+        <div class="rp-actions"><button class="ad-btn" data-x="rp-gen">Generate</button>${rp.result ? ' <button class="ad-btn alt" data-x="rp-csv">Export CSV</button> <button class="ad-btn alt" data-x="rp-print">Print / Save as PDF</button>' : ''}</div>
+        <div id="rpPreview">${previewHtml()}</div></section></div>`;
+  };
+
+  function readFilters() {
+    ['program', 'year', 'status', 'term', 'student'].forEach((k) => { const el = $('#rp_' + k); if (el) rp[k] = el.value; });
+  }
+
+  function reportAction(a, v) {
+    if (a === 'rp-pick') { readFilters(); rp.id = v; rp.result = null; return true; }
+    if (a === 'rp-open') { rp.id = v; rp.result = null; if (page === 'profile' && viewNo && regStudent(viewNo)) rp.student = viewNo; page = 'reports'; return true; }
+    const def = REP[rp.id];
+    if (a === 'rp-gen') {
+      readFilters();
+      const out = def.build();
+      const sub = def.filters.filter((k) => k !== 'student').map((k) => ({ program: rp.program === ALL ? '' : rp.program, year: rp.year === ALL ? '' : rp.year + ' Year', status: rp.status === ALL ? '' : rp.status, term: def.doc ? '' : termName(rp.term) }[k])).filter(Boolean).join(' · ');
+      rp.result = { ...out, title: def.name, sub: sub || (def.doc ? '' : 'All records'), ts: new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) };
+      log(`Generated ${def.name} (${out.rows.length} records)`, 'Reports', 'GeneratedReports', rp.id, 'EXPORT');
+      if (staff() && staff().logReport) staff().logReport(def.name, acct.username, out.rows.length);
+      return true;
+    }
+    if (a === 'rp-csv' && rp.result) {
+      const r = rp.result, lines = [[r.title, r.sub], ...(r.head || []), [], r.cols, ...r.rows, [], ...(r.foot || [])];
+      const csv = lines.map((row) => row.map((x) => `"${String(x == null ? '' : x).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const l = document.createElement('a'); l.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); l.download = `${r.title}.csv`; l.click();
+      log(`Exported ${r.title} to CSV`, 'Reports', 'GeneratedReports', rp.id, 'EXPORT');
+      return false;
+    }
+    if (a === 'rp-print' && rp.result) {
+      document.body.classList.add('rp-printing');
+      const done = () => { document.body.classList.remove('rp-printing'); window.removeEventListener('afterprint', done); };
+      window.addEventListener('afterprint', done);
+      setTimeout(() => { window.print(); setTimeout(done, 1000); }, 50);
+      log(`Printed ${rp.result.title}`, 'Reports', 'GeneratedReports', rp.id, 'EXPORT');
+      return false;
+    }
+    return false;
+  }
 
   /* ---- Document Management ---- */
   pages.documents = () => {
     const d = docs();
     const rows = d.requirements.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.file ? esc(r.file.name) : '\u2014'}</td><td>${badge(r.status === 'verified' ? 'ok' : r.status === 'review' ? 'info' : r.status === 'rejected' ? 'risk' : 'warn', r.status)}</td><td>${esc(r.updated || '\u2014')}</td>
       <td>${r.status === 'review' ? `<a data-doc="verified" data-id="${esc(r.id)}">Verify</a> <a data-doc="rejected" data-id="${esc(r.id)}">Reject</a>` : ''}</td></tr>`).join('');
-    const req = Object.keys(d.requests).map((id) => `<li>${esc(DOC_REQ[id] || id)} <small>\u00B7 requested ${esc(d.requests[id])}</small> <a data-rel="${esc(id)}">Mark released</a></li>`).join('');
+    const req = Object.keys(d.requests).map((id) => `<li>${esc(DOC_REQ[id] || id)} <small>\u00B7 requested ${esc(d.requests[id])}</small> ${id === 'tor' ? '<a data-x="rp-open" data-v="tor">Generate TOR</a> ' : ''}<a data-rel="${esc(id)}">Mark released</a></li>`).join('');
     return `<h1>Document Management</h1><h3>Verification queue</h3>
       <table class="ad-table"><tr><th>Document</th><th>File</th><th>Status</th><th>Updated</th><th>Action</th></tr>${rows}</table>
       <h3>Official document requests</h3><ul class="ad-list">${req || '<li>No pending requests.</li>'}</ul>`;
@@ -329,10 +495,6 @@
       wr(K.docs, dc); log(`Document ${r.name} ${r.status}`, 'Documents', 'StudentDocuments', r.id, 'APPROVE');
     } else if (d.rel) {                        // official document request released
       const dc = docs(); delete dc.requests[d.rel]; wr(K.docs, dc); log(`${DOC_REQ[d.rel]} released`, 'Documents', 'StudentDocuments', d.rel, 'EXPORT');
-    } else if (d.gr !== undefined) {           // student-portal grade release: submitted -> approved -> posted
-      const g = gradeQueue()[Number(d.gr)], next = g.st === 'submitted' ? 'approved' : 'posted';
-      SIMSData.update((x) => { x.subjects.find((s) => s.id === g.s.id).gradeStatus[g.k] = next; });
-      log(`${g.s.code} ${g.k} grade ${next}`, 'Grades', 'StudentGrades', g.s.code + '|' + g.k, 'APPROVE');
     } else if (d.x) {
       if (!doX(d.x, d.v)) return;
     } else return;
@@ -368,10 +530,15 @@
       let note = '';
       if (a === 'sheet-return') { note = prompt('Reason for returning the grades to the faculty:'); if (note === null) return false; if (!note.trim()) { alert('A reason is required.'); return false; } }
       staff().setGradeStatus(g.classId, g.period, a === 'sheet-post' ? 'Posted' : 'Returned', acct.username, note);
-    } else if (a === 'rep') {
-      const r = REP[v], csv = r[1]().map((row) => row.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(',')).join('\n');
-      const l = document.createElement('a'); l.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' })); l.download = v + '.csv'; l.click();
-      log(`Exported ${r[0]}`, 'Reports', 'GeneratedReports', v, 'EXPORT'); return false;
+    } else if (a === 'gc-apply' || a === 'gc-reject') {
+      const x = gradeCorrections().find((y) => y.id === v); if (!x) return false;
+      let note = '';
+      if (a === 'gc-reject') { note = prompt('Reason for rejecting the correction (shown to the faculty):'); if (note === null) return false; if (!note.trim()) { alert('A reason is required.'); return false; } }
+      else if (!confirm(`Apply correction ${x.id}? ${x.name}'s ${x.code} grade changes from ${gradeTxt(x.from)} to ${gradeTxt(x.to)}.`)) return false;
+      const r = staff().decideCorrection(v, a === 'gc-apply' ? 'apply' : 'reject', acct.username, note);
+      if (!r.ok) { alert(r.message); return false; }
+    } else if (a.startsWith('rp-')) {
+      return reportAction(a, v);
     } else if (a === 'savecontact') {
       const m = settings(); Object.assign(m, { email: val('s_email'), mobile: val('s_mobile'), office: val('s_office') }); saveSettings(m); alert('Saved.'); return false;
     } else if (a === 'savepw') {
@@ -403,7 +570,7 @@
     if (root.dataset.bound) return;
     root.dataset.bound = 1;
     root.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-go],[data-sel],[data-cor],[data-app],[data-doc],[data-rel],[data-gr],[data-x]');
+      const t = e.target.closest('[data-go],[data-sel],[data-cor],[data-app],[data-doc],[data-rel],[data-x]');
       if (!t || !root.contains(t)) return;
       e.preventDefault(); act(t);
     });

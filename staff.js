@@ -51,7 +51,7 @@
     reports: 'bits-sims-staff-reports', pw: 'bits-sims-staff-pw', locks: 'bits-sims-staff-locks'
   };
   // Bump when the seed data changes so everyone's old browser data resets
-  const STAFF_VERSION = 2;
+  const STAFF_VERSION = 3;
   try {
     if (localStorage.getItem('bits-sims-staff-version') !== String(STAFF_VERSION)) {
       Object.values(K).forEach((k) => localStorage.removeItem(k));
@@ -62,7 +62,11 @@
     try { const v = JSON.parse(localStorage.getItem(key)); if (v !== null && v !== undefined) return v; } catch (e) { /* ignore */ }
     return seed();
   };
-  const persist = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage unavailable */ } };
+  const persist = (key, value) => {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage unavailable */ }
+    if (key === K.fac || key === K.classes) queueSync();   // grades/attendance -> academic records
+  };
+  let syncQueued = false;   // see queueSync()
 
   /* =====================================================
      STAFF ACCOUNTS (the logins) - hardcoded in accounts.js
@@ -237,9 +241,13 @@
     return out.reverse().slice(0, 10);
   }
 
+  // Sample Finals states: 2 posted, 1 approved (waiting for the Registrar),
+  // 1 still a draft so the whole Faculty -> Dept Head -> Registrar chain can be demoed
+  const SEED_STATUS = { 'CO-1': 'Posted', 'CO-4': 'Posted', 'CO-2': 'Approved', 'CO-3': 'Draft' };
+
   function seedFaculty() {
-    const fac = { attendance: {}, assessments: [], scores: {}, gradeStatus: {}, alerts: [] };
-    const classes = seedClasses().filter((c) => c.faculty === 'faculty.reyes');
+    const fac = { attendance: {}, assessments: [], scores: {}, gradeStatus: {}, alerts: [], corrections: [], overrides: {}, postedAt: {} };
+    const classes = seedClasses();
     classes.forEach((c, ci) => {
       fac.attendance[c.id] = {};
       meetingDates(c).slice(1).forEach((date, di) => {   // newest meeting stays open (a pending task)
@@ -257,7 +265,8 @@
         fac.scores[id] = {};
         ROSTER.forEach((s, si) => { fac.scores[id][s.sn] = Math.round(max * (0.7 + rnd(ci * 50 + i * 9 + si + 3) * 0.28)); });
       });
-      fac.gradeStatus[`${c.id}|Final`] = ci === 0 ? 'Submitted' : 'Draft';
+      fac.gradeStatus[`${c.id}|Final`] = SEED_STATUS[c.id] || 'Draft';
+      if (fac.gradeStatus[`${c.id}|Final`] === 'Posted') fac.postedAt[`${c.id}|Final`] = '2026-11-06 15:30';
     });
     return fac;
   }
@@ -275,6 +284,17 @@
     reports: load(K.reports, () => []), pw: load(K.pw, () => ({})), locks: load(K.locks, () => ({}))
   };
   const save = (...names) => names.forEach((n) => persist(K[n === 'alertCfg' ? 'alerts' : n], db[n]));
+  db.fac.corrections = db.fac.corrections || [];
+  db.fac.overrides = db.fac.overrides || {};
+  queueSync();   // bring the academic records in line with the faculty data on load
+
+  // Another tab (e.g. the Registrar or a faculty member) changed staff data: reload it here
+  window.addEventListener('storage', (e) => {
+    const name = Object.keys(K).find((n) => K[n] === e.key);
+    const prop = name === 'alerts' ? 'alertCfg' : name;
+    if (!prop || !(prop in db) || e.newValue === null) return;
+    try { db[prop] = JSON.parse(e.newValue); } catch (err) { /* ignore bad data */ }
+  });
 
   let me = null;          // signed-in staff account
   let page = 'dashboard';
@@ -962,9 +982,31 @@
         : '<p class="dm-empty">No assessments for this period yet. Add a quiz, exam or project to start encoding scores.</p>'}
       ${status === 'Returned' && gnote ? `<p class="staff-bad"><strong>Returned by ${esc(userName(gnote.by))}:</strong> ${esc(gnote.note)}</p>` : ''}
       <small class="set-error" id="grError"></small>
-      <div class="set-actions">${locked ? (status === 'Submitted' ? '<button type="button" class="btn-light" data-act="gr-recall">Recall to draft</button><span class="staff-meta">Submitted for Department Head review.</span>' : status === 'Approved' ? '<span class="staff-meta">Approved by the Department Head. Waiting for the Registrar to post.</span>' : '<span class="staff-meta">Posted by the Registrar. Changes to posted grades need a formal correction.</span>') : `<button type="button" class="btn-solid" data-act="gr-submit" ${list.length ? '' : 'disabled'}>Submit ${esc(ui.gr.period)} grades</button>`}</div>
-      <p class="dm-foot">Equivalent grade: 1.00 highest, 3.00 passing (75%), 5.00 failed. A grade shows once every score is encoded.</p>`)}`;
+      <div class="set-actions">${locked ? (status === 'Submitted' ? '<button type="button" class="btn-light" data-act="gr-recall">Recall to draft</button><span class="staff-meta">Submitted for Department Head review.</span>' : status === 'Approved' ? '<span class="staff-meta">Approved by the Department Head. Waiting for the Registrar to post.</span>' : '<span class="staff-meta">Posted by the Registrar. A posted grade only changes through a correction request.</span><button type="button" class="btn-light" data-act="gc-new">Request grade correction</button>') : `<button type="button" class="btn-solid" data-act="gr-submit" ${list.length ? '' : 'disabled'}>Submit ${esc(ui.gr.period)} grades</button>`}</div>
+      <p class="dm-foot">Equivalent grade: 1.00 highest, 3.00 passing (75%), 5.00 failed. A grade shows once every score is encoded.</p>`)}
+      ${status === 'Posted' ? correctionsCard(corrections().filter((x) => x.classId === c.id), 'Grade corrections for this class') : ''}`;
   };
+
+  // Shared list of grade corrections (faculty: own class; Dept Head: to review)
+  const CORR_TONE = { Requested: 'Submitted', Endorsed: 'Approved', Applied: 'Posted', Rejected: 'Returned' };
+  function correctionsCard(list, title, actions) {
+    return card(title, list.length ? table(['ID', 'Student', 'Course', 'Posted', 'Corrected', 'Reason', 'Status', ''], list.map((x) => {
+      const last = x.history[x.history.length - 1];
+      return `<tr><td>${esc(x.id)}<br><small>${esc(x.ts.slice(0, 10))}</small></td><td><strong>${esc(x.name)}</strong><br><small>${esc(x.sn)}</small></td><td>${esc(x.code)} \u00B7 ${esc(x.section)}</td>
+        <td class="num">${fmtGrade(x.from)}</td><td class="num"><strong>${fmtGrade(x.to)}</strong></td><td>${esc(x.reason)}</td>
+        <td><span class="dm-status ${STATUS_CLS[CORR_TONE[x.status]] || 'muted'}">${esc(x.status)}</span>${x.status === 'Rejected' && last.note ? `<br><small>${esc(last.note)}</small>` : ''}</td>
+        <td>${actions && x.status === 'Requested' ? `<button type="button" class="btn-solid btn-sm" data-act="gc-endorse" data-id="${x.id}">Endorse</button> <button type="button" class="btn-light btn-sm" data-act="gc-reject" data-id="${x.id}">Reject</button>` : x.status === 'Endorsed' ? '<small>With the Registrar</small>' : x.status === 'Requested' ? '<small>With the Department Head</small>' : ''}</td></tr>`;
+    })) : '<p class="dm-empty">No grade corrections yet.</p>');
+  }
+
+  function correctionForm(c) {
+    return `<form id="gcForm" class="staff-form" novalidate>
+      <p class="dm-modal-note">Posted ${esc(FINAL)} grades for <strong>${esc(c.code)} ${esc(c.section)}</strong>. The Department Head endorses the request and the Registrar applies it.</p>
+      ${field('gcStudent', 'Student', `<select id="gcStudent" class="dm-select">${opts(ROSTER.map((x) => [x.sn, `${x.name} (${x.sn}) \u2014 posted ${fmtGrade(officialGrade(c.id, x.sn))}`]), '')}</select>`)}
+      ${field('gcGrade', 'Corrected grade', `<select id="gcGrade" class="dm-select"><option value="">Choose\u2026</option>${opts(GRADE_CHOICES.map((g) => [g, g]), '')}</select>`)}
+      ${field('gcReason', 'Reason', '<textarea id="gcReason" rows="3" placeholder="e.g. Quiz 2 score was encoded as 18 instead of 28."></textarea>', 'Required. This is kept in the audit trail.')}
+    </form>`;
+  }
   function updateGradeRow(sn) {
     const tr = $(`tr[data-sn="${sn}"]`, $('#stMain')); if (!tr) return;
     const r = periodResult(ui.gr.cls, ui.gr.period, sn);
@@ -1002,8 +1044,43 @@
     { id: 'classlist', name: 'Class List', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['#', 'Student number', 'Name', 'Course', 'Section', 'Faculty'], rows: ROSTER.map((s, i) => [i + 1, s.sn, s.name, c.code, c.section, me.name]) }) },
     { id: 'daily', name: 'Daily Attendance Report', roles: ['FACULTY'], filters: ['class', 'date'], build: (c) => { const s = attSession(c, ui.rep.date); return { cols: ['Student number', 'Name', 'Status', 'Time in', 'Time out', 'Remarks'], rows: s ? ROSTER.map((r) => { const x = s.rows[r.sn] || {}; return [r.sn, r.name, x.status || '\u2014', x.timeIn || '\u2014', x.timeOut || '\u2014', x.remarks || '']; }) : [] }; } },
     { id: 'attsum', name: 'Student Attendance Summary', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['Student number', 'Name', 'Sessions', 'Attended', 'Attendance %'], rows: ROSTER.map((s) => { const a = attPct(c.id, s.sn); return [s.sn, s.name, a.held, a.att, a.pct.toFixed(1) + '%']; }) }) },
-    { id: 'gradesrep', name: 'Student Grade Report', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['Student number', 'Name', ...PERIODS.flatMap((p) => [`${p} %`, `${p} grade`]), 'Status'], rows: ROSTER.map((s) => [s.sn, s.name, ...PERIODS.flatMap((p) => { const r = periodResult(c.id, p, s.sn); return [r.pct === null ? '\u2014' : r.pct.toFixed(1), r.pct === null || !r.complete ? '\u2014' : toGrade(r.pct).toFixed(2)]; }), PERIODS.map((p) => `${p}: ${db.fac.gradeStatus[`${c.id}|${p}`] || 'Draft'}`).join(' \u00B7 ')]) }) }
+    { id: 'gradesrep', name: 'Student Grade Report', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['Student number', 'Name', ...PERIODS.flatMap((p) => [`${p} %`, `${p} grade`]), 'Status'], rows: ROSTER.map((s) => [s.sn, s.name, ...PERIODS.flatMap((p) => { const r = periodResult(c.id, p, s.sn); return [r.pct === null ? '\u2014' : r.pct.toFixed(1), r.pct === null || !r.complete ? '\u2014' : toGrade(r.pct).toFixed(2)]; }), PERIODS.map((p) => `${p}: ${db.fac.gradeStatus[`${c.id}|${p}`] || 'Draft'}`).join(' \u00B7 ')]) }) },
+    // Academic performance, absence and tardiness (design reference 6.5); faculty see their class, Dept Heads every class
+    { id: 'perf', name: 'Academic Performance Report', roles: ['FACULTY'], filters: ['class'], build: (c) => perfReport([c]) },
+    { id: 'deptperf', name: 'Department Academic Performance', roles: ['DEPT_HEAD'], filters: [], build: () => perfReport(db.classes) },
+    { id: 'absence', name: 'Student Absence Report', roles: ['FACULTY'], filters: ['class'], build: (c) => attFlagReport([c], 'absent') },
+    { id: 'deptabsence', name: 'Student Absence Report (Department)', roles: ['DEPT_HEAD'], filters: [], build: () => attFlagReport(db.classes, 'absent') },
+    { id: 'tardy', name: 'Tardiness Report', roles: ['FACULTY'], filters: ['class'], build: (c) => attFlagReport([c], 'late') },
+    { id: 'depttardy', name: 'Tardiness Report (Department)', roles: ['DEPT_HEAD'], filters: [], build: () => attFlagReport(db.classes, 'late') },
   ];
+  // Grade distribution, average and pass rate per class (uses official grades, corrections included)
+  function perfReport(classes) {
+    const bands = [['1.00\u20131.50', (g) => g <= 1.5], ['1.75\u20132.25', (g) => g > 1.5 && g <= 2.25], ['2.50\u20133.00', (g) => g > 2.25 && g <= 3], ['5.00', (g) => g > 3]];
+    return { cols: ['Course', 'Section', 'Faculty', 'Sheet status', 'Graded', 'Average', 'Highest', 'Lowest', 'Passed', 'Failed', 'Pass rate', ...bands.map((b) => b[0])],
+      rows: classes.map((c) => {
+        const gs = ROSTER.map((x) => officialGrade(c.id, x.sn)).filter((g) => typeof g === 'number');
+        const passed = gs.filter((g) => g <= 3).length;
+        const avg = gs.length ? gs.reduce((n, g) => n + g, 0) / gs.length : null;
+        return [c.code, c.section, userName(c.faculty), db.fac.gradeStatus[`${c.id}|${FINAL}`] || 'Draft', gs.length,
+          avg === null ? '\u2014' : avg.toFixed(2), gs.length ? Math.min(...gs).toFixed(2) : '\u2014', gs.length ? Math.max(...gs).toFixed(2) : '\u2014',
+          passed, gs.length - passed, gs.length ? ((passed / gs.length) * 100).toFixed(1) + '%' : '\u2014', ...bands.map((b) => gs.filter(b[1]).length)];
+      }) };
+  }
+
+  // Students with absences or late arrivals, flagged against ICT's alert thresholds
+  function attFlagReport(classes, kind) {
+    const limit = kind === 'absent' ? db.alertCfg.maxAbsences : db.alertCfg.tardiness;
+    const rows = [];
+    classes.forEach((c) => ROSTER.forEach((x) => {
+      const a = attendanceFor(c.id, x.sn), n = kind === 'absent' ? a.absent : a.late;
+      if (!n) return;
+      const rate = a.held - a.excused ? ((a.held - a.absent - a.excused) / (a.held - a.excused)) * 100 : null;
+      rows.push([x.sn, x.name, c.code, c.section, n, a.held, rate === null ? '\u2014' : rate.toFixed(1) + '%', n >= limit ? 'Over limit' : 'Watch']);
+    }));
+    rows.sort((a, b) => b[4] - a[4]);
+    return { cols: ['Student number', 'Name', 'Course', 'Section', kind === 'absent' ? 'Absences' : 'Late arrivals', 'Sessions', 'Attendance %', `Flag (limit ${limit})`], rows };
+  }
+
   const myReports = () => REPORTS.filter((r) => r.roles.includes(me.role));
 
   PAGES.reports = () => {
@@ -1100,6 +1177,8 @@
   function setGradeStatus(classId, period, status, by, note) {
     const key = `${classId}|${period}`, before = db.fac.gradeStatus[key] || 'Draft';
     db.fac.gradeStatus[key] = status;
+    db.fac.postedAt = db.fac.postedAt || {};
+    if (status === 'Posted') db.fac.postedAt[key] = nowStamp();
     db.fac.gradeNotes = db.fac.gradeNotes || {};
     if (note) db.fac.gradeNotes[key] = { by, note, ts: nowStamp(), status };
     else delete db.fac.gradeNotes[key];
@@ -1107,6 +1186,132 @@
     const c = db.classes.find((x) => x.id === classId);
     record(by, 'Grades', 'StudentGrades', `${c ? c.code : classId}|${period}`, status === 'Returned' ? 'UPDATE' : 'APPROVE',
       `${status} ${period} grades for ${c ? c.code + ' ' + c.section : classId}${note ? ' \u2014 ' + note : ''}`, 'Success', 'status: ' + before, 'status: ' + status);
+  }
+
+  /* =====================================================
+     ACADEMIC RECORDS LINK (Module 3 -> data.js)
+     The faculty grade sheet is the source of truth. Whenever faculty
+     data changes, the student-portal record (SIMSData) is brought in
+     line: Draft/Returned = hidden, Submitted/Approved = awaiting release,
+     Posted = official. Posted sheets are also stored for the whole class
+     (classGrades) for transcripts and analytics. Attendance submitted by
+     faculty becomes the student's attendance record.
+  ===================================================== */
+  const FINAL = PERIODS[PERIODS.length - 1];
+  const RECORD_STATE = { Submitted: 'submitted', Approved: 'approved', Posted: 'posted' };
+
+  // Official grade for one student: an applied correction wins, otherwise the computed grade
+  function officialGrade(classId, sn) {
+    const o = (db.fac.overrides || {})[`${classId}|${FINAL}|${sn}`];
+    if (o !== undefined && o !== null) return o;   // number or 'INC'
+    const r = periodResult(classId, FINAL, sn);
+    return r.pct !== null && r.complete ? toGrade(r.pct) : null;
+  }
+
+  function attendanceFor(classId, sn) {
+    const sessions = Object.entries(db.fac.attendance[classId] || {})
+      .filter(([, x]) => x.status === 'Submitted' && x.rows[sn])
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, x]) => ({ date, status: x.rows[sn].status }));
+    const count = (st) => sessions.filter((x) => x.status === st).length;
+    return { held: sessions.length, absent: count('Absent'), late: count('Late'), excused: count('Excused'), sessions };
+  }
+
+  const gradeRemark = (g, passing) => (g === 'INC' ? 'inc' : typeof g === 'number' ? (g <= passing ? 'passed' : 'failed') : 'inprogress');
+
+  function syncRecords() {
+    const D = window.SIMSData;
+    if (!D || !D.raw) return;
+    const term = D.currentTerm(), sn = D.student().id, passing = D.rules().passingGrade;
+    const subjects = D.raw.subjectsIn(term.id);
+    const changes = [], classGrades = {};
+    db.classes.forEach((c) => {
+      const key = `${c.id}|${FINAL}`, st = db.fac.gradeStatus[key] || 'Draft';
+      const subj = subjects.find((x) => x.code === c.code);
+      if (st === 'Posted') {
+        classGrades[`${c.code}|${term.id}`] = {
+          code: c.code, title: c.title, termId: term.id, units: subj ? subj.units : 3, section: c.section,
+          faculty: userName(c.faculty), postedAt: (db.fac.postedAt || {})[key] || '',
+          rows: Object.fromEntries(ROSTER.map((x) => { const g = officialGrade(c.id, x.sn); return [x.sn, { name: x.name, grade: typeof g === 'number' ? g : null, status: gradeRemark(g, passing) }]; }))
+        };
+      }
+      if (!subj || !ROSTER.some((r) => r.sn === sn)) return;
+      const g = officialGrade(c.id, sn), rs = RECORD_STATE[st];
+      const want = rs && g !== null
+        ? { finalGrade: typeof g === 'number' ? g : null, status: gradeRemark(g, passing), gradeStatus: { final: rs } }
+        : { finalGrade: null, status: 'inprogress', gradeStatus: {} };
+      const att = attendanceFor(c.id, sn);
+      Object.assign(want, {
+        attendance: { held: att.held, absent: att.absent, late: att.late, excused: att.excused },
+        sessions: att.sessions,
+        instructor: userName(c.faculty),
+        schedule: `${c.day.slice(0, 3)} ${fmtTime(c.start)}-${fmtTime(c.end)}`
+      });
+      const differs = Object.keys(want).some((k) => JSON.stringify(subj[k] === undefined ? null : subj[k]) !== JSON.stringify(want[k]));
+      if (differs) changes.push([subj.id, want]);
+    });
+    const cgSame = JSON.stringify(D.get().classGrades || {}) === JSON.stringify(classGrades);
+    if (!changes.length && cgSame) return;
+    D.update((d) => {
+      changes.forEach(([id, want]) => {
+        const x = d.subjects.find((y) => y.id === id);
+        const gradeMoved = x.finalGrade !== want.finalGrade || JSON.stringify(x.gradeStatus || {}) !== JSON.stringify(want.gradeStatus);
+        Object.assign(x, want);
+        if (gradeMoved) x.updated = isoDate(new Date());
+      });
+      d.classGrades = classGrades;
+    });
+  }
+
+  function queueSync() {
+    if (syncQueued) return;
+    syncQueued = true;
+    Promise.resolve().then(() => { syncQueued = false; try { syncRecords(); } catch (e) { console.error('[SIMSStaff] sync failed', e); } });
+  }
+
+  /* ---------- Grade corrections (design reference rule 15) ----------
+     A posted grade only changes through: Faculty requests (with a reason)
+     -> Department Head endorses -> Registrar applies. Rejections need a
+     reason. Every step is in the audit trail with the old and new grade. */
+  const GRADE_CHOICES = ['1.00', '1.25', '1.50', '1.75', '2.00', '2.25', '2.50', '2.75', '3.00', '5.00', 'INC'];
+  const fmtGrade = (g) => (g === 'INC' ? 'INC' : typeof g === 'number' ? g.toFixed(2) : '\u2014');
+  const corrections = () => (db.fac.corrections = db.fac.corrections || []);
+
+  function requestCorrection(classId, sn, to, reason, by) {
+    const c = db.classes.find((x) => x.id === classId), st = ROSTER.find((x) => x.sn === sn);
+    if (!c || !st) return { ok: false, message: 'Unknown class or student.' };
+    if ((db.fac.gradeStatus[`${classId}|${FINAL}`] || 'Draft') !== 'Posted') return { ok: false, message: 'Only posted grades go through a correction.' };
+    const from = officialGrade(classId, sn);
+    const next = to === 'INC' ? 'INC' : Number(to);
+    if (next !== 'INC' && !(next >= 1 && next <= 5)) return { ok: false, message: 'Choose the corrected grade.' };
+    if (fmtGrade(from) === fmtGrade(next)) return { ok: false, message: 'The corrected grade is the same as the posted grade.' };
+    if (!reason || reason.trim().length < 10) return { ok: false, message: 'Explain the reason (at least 10 characters).' };
+    if (corrections().some((x) => x.classId === classId && x.sn === sn && ['Requested', 'Endorsed'].includes(x.status))) return { ok: false, message: 'This student already has an open correction for this class.' };
+    const n = corrections().length + 1, id = 'GC-' + String(n).padStart(4, '0');
+    corrections().unshift({ id, classId, code: c.code, section: c.section, title: c.title, sn, name: st.name, from, to: next, reason: reason.trim(), by, ts: nowStamp(), status: 'Requested', history: [{ status: 'Requested', by, ts: nowStamp(), note: reason.trim() }] });
+    persist(K.fac, db.fac);
+    record(by, 'Grades', 'GradeCorrections', id, 'CREATE', `Requested grade correction for ${st.name} in ${c.code}: ${fmtGrade(from)} \u2192 ${fmtGrade(next)}`, 'Success', 'grade: ' + fmtGrade(from), 'grade: ' + fmtGrade(next));
+    return { ok: true, id };
+  }
+
+  // action: 'endorse' (Dept Head) | 'apply' (Registrar) | 'reject' (either; needs a note)
+  function decideCorrection(id, action, by, note) {
+    const x = corrections().find((y) => y.id === id);
+    if (!x) return { ok: false, message: 'Correction not found.' };
+    const allowed = { endorse: ['Requested'], apply: ['Endorsed'], reject: ['Requested', 'Endorsed'] }[action];
+    if (!allowed || !allowed.includes(x.status)) return { ok: false, message: 'This correction can no longer be changed.' };
+    if (action === 'reject' && !(note && note.trim())) return { ok: false, message: 'A reason is required to reject a correction.' };
+    x.status = { endorse: 'Endorsed', apply: 'Applied', reject: 'Rejected' }[action];
+    x.history.push({ status: x.status, by, ts: nowStamp(), note: (note || '').trim() });
+    if (action === 'apply') {
+      db.fac.overrides = db.fac.overrides || {};
+      db.fac.overrides[`${x.classId}|${FINAL}|${x.sn}`] = x.to;
+    }
+    persist(K.fac, db.fac);
+    record(by, 'Grades', 'GradeCorrections', x.id, action === 'apply' ? 'UPDATE' : 'APPROVE',
+      `${x.status} grade correction ${x.id} (${x.name}, ${x.code}: ${fmtGrade(x.from)} \u2192 ${fmtGrade(x.to)})${note ? ' \u2014 ' + note.trim() : ''}`, 'Success',
+      action === 'apply' ? 'grade: ' + fmtGrade(x.from) : 'status: ' + x.history[x.history.length - 2].status, action === 'apply' ? 'grade: ' + fmtGrade(x.to) : 'status: ' + x.status);
+    return { ok: true };
   }
 
   function attendanceSummary() {
@@ -1162,6 +1367,7 @@
         ${stat('APPROVED', n('Approved'), 'Waiting for the Registrar')}
         ${stat('POSTED', n('Posted'), 'Official grades', 'is-blue')}
       </div>
+      ${correctionsCard(corrections().filter((x) => x.status !== 'Applied' || x.history.some((h) => h.by === me.username)), 'Grade corrections', true)}
       ${card('', table(['Course', 'Section', 'Faculty', 'Period', 'Status', 'Remarks', ''], list.map((g) => `<tr><td><strong>${esc(g.code)}</strong><br><small>${esc(g.title)}</small></td><td>${esc(g.section)}</td><td>${esc(g.faculty)}</td><td>${esc(g.period)}</td><td>${badge(g.status)}</td><td><small>${g.note ? esc(g.note.note) : '\u2014'}</small></td>
         <td>${g.status === 'Draft' ? '<small>Not yet submitted</small>' : `<button type="button" class="btn-${g.status === 'Submitted' ? 'solid' : 'light'} btn-sm" data-act="rev-open" data-id="${g.classId}" data-period="${g.period}">${g.status === 'Submitted' ? 'Review' : 'View'}</button>`}</td></tr>`), 'No grade sheets yet.'))}`;
   };
@@ -1353,6 +1559,19 @@
         ask('Submit grades?', `Submit ${ui.gr.period} grades for review? You won\u2019t be able to edit scores unless you recall them.`, 'Submit', () => { db.fac.gradeStatus[`${ui.gr.cls}|${ui.gr.period}`] = 'Submitted'; if (db.fac.gradeNotes) delete db.fac.gradeNotes[`${ui.gr.cls}|${ui.gr.period}`]; persist(K.fac, db.fac); audit('Grades', 'StudentGrades', `${ui.gr.cls}|${ui.gr.period}`, 'APPROVE', `Submitted ${ui.gr.period} grades`); toast('Grades submitted for review.'); render(); }); break; }
       case 'gr-recall': if ((db.fac.gradeStatus[`${ui.gr.cls}|${ui.gr.period}`] || 'Draft') !== 'Submitted') break; ask('Recall to draft?', 'The submission is withdrawn so you can edit scores again.', 'Recall', () => { db.fac.gradeStatus[`${ui.gr.cls}|${ui.gr.period}`] = 'Draft'; persist(K.fac, db.fac); audit('Grades', 'StudentGrades', `${ui.gr.cls}|${ui.gr.period}`, 'UPDATE', `Recalled ${ui.gr.period} grades to draft`); render(); }); break;
 
+      case 'gc-new': { if (!can('grades.encode')) break; const c = myClasses().find((x) => x.id === ui.gr.cls); if (!c) break;
+        openModal({ title: 'Request grade correction', ok: 'Send request', body: correctionForm(c), onOk: () => {
+          ['gcStudent', 'gcGrade', 'gcReason'].forEach((i) => setErr(i, ''));
+          if (!$('#gcGrade').value) { setErr('gcGrade', 'Choose the corrected grade.'); return false; }
+          const r = requestCorrection(c.id, $('#gcStudent').value, $('#gcGrade').value, $('#gcReason').value, me.username);
+          if (!r.ok) { setErr(/reason/i.test(r.message) ? 'gcReason' : /grade/i.test(r.message) ? 'gcGrade' : 'gcStudent', r.message); return false; }
+          toast(`Correction ${r.id} sent to the Department Head.`); render(); return true; } }); break; }
+      case 'gc-endorse': { if (!can('grades.review')) break; const r = decideCorrection(id, 'endorse', me.username); toast(r.ok ? 'Correction endorsed. The Registrar can now apply it.' : r.message, r.ok ? '' : 'error'); render(); break; }
+      case 'gc-reject': { if (!can('grades.review')) break;
+        openModal({ title: 'Reject correction', ok: 'Reject', body: field('gcNote', 'Reason (shown to the faculty)', '<textarea id="gcNote" rows="3"></textarea>'), onOk: () => {
+          const r = decideCorrection(id, 'reject', me.username, $('#gcNote').value);
+          if (!r.ok) { setErr('gcNote', r.message); return false; }
+          toast('Correction rejected.'); render(); return true; } }); break; }
       case 'rep-generate': generateReport(); break;
       case 'rep-csv': if (ui.rep.result) { downloadCsv(ui.rep.result.title, ui.rep.result.cols, ui.rep.result.rows); audit('Reports', 'GeneratedReports', ui.rep.id, 'EXPORT', `Exported ${ui.rep.result.title} to CSV`); } break;
       case 'rep-print': if (ui.rep.result) printReport(); break;
@@ -1494,6 +1713,14 @@
     userName,
     gradeSheets: gradeSheetsList,
     setGradeStatus,
+    officialGrade,
+    corrections: () => corrections().map((x) => ({ ...x })),
+    decideCorrection,
+    attendanceRows: () => db.classes.flatMap((c) => ROSTER.map((st) => ({ code: c.code, title: c.title, section: c.section, faculty: userName(c.faculty), sn: st.sn, name: st.name, ...attendanceFor(c.id, st.sn) }))),
+    alertConfig: () => ({ ...db.alertCfg }),
+    classRoster: () => db.classes.map((c) => ({ id: c.id, code: c.code, title: c.title, section: c.section, faculty: userName(c.faculty), status: db.fac.gradeStatus[`${c.id}|${FINAL}`] || 'Draft', students: ROSTER.map((x) => ({ ...x })) })),
+    // Report history (design reference 6.4) for reports generated in other portals
+    logReport: (name, by, count) => { db.reports.unshift({ ts: nowStamp(), name, by, count }); if (db.reports.length > 60) db.reports.length = 60; save('reports'); },
     attendanceSummary,
     attendanceAlerts: () => db.fac.alerts.map((a) => ({ date: a.date, student: a.student, type: a.type, message: a.message })),
     record,

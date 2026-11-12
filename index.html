@@ -230,13 +230,13 @@
                 <span class="col-heading">Taken Sessions</span>
               </div>
 
-              <div class="info-row">
+              <div class="info-row" data-att-code="ITP3112R">
                 <div class="course-text">TS-ITP3112R-BSIT-3B-1AY2627 ITP3112R-System Administration and Maintenance 1-BSIT-3B-1st Semester, AY26-27</div>
                 <div class="attendance-date">Attendance<br />10-1-2026</div>
                 <div class="sessions-count">9 Sessions</div>
               </div>
 
-              <div class="info-row">
+              <div class="info-row" data-att-code="GEN-RP">
                 <div class="course-text">TS-GEN-RP-BSIT-3B-1AY2627 GEN-RP-Readings in Philippine History-BSIT-3B-1st Semester, AY26-27</div>
                 <div class="attendance-date">Attendance<br />10-2-2026</div>
                 <div class="sessions-count">5 Sessions</div>
@@ -986,7 +986,7 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>
                   </span>
                   <span class="rep-stat-text">
-                    <span class="rep-stat-label">Current GPA</span>
+                    <span class="rep-stat-label">Last Term GWA</span>
                     <span class="rep-stat-value" data-stat="gpa">0.00</span>
                   </span>
                 </button>
@@ -1036,7 +1036,7 @@
                 </section>
 
                 <section class="dash-card rep-card">
-                  <h3 class="rep-card-title">Custom Report</h3>
+                  <h3 class="rep-card-title">Attendance Analytics</h3>
                   <div class="rep-actions">
                     <button type="button" class="rep-action" data-doc="attendance" data-action="generate">
                       <svg class="rep-doc-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg>
@@ -1074,6 +1074,7 @@
                       Report Card
                     </span>
                     <span class="doc-bar-actions">
+                      <label class="doc-term"><span class="sr-only">Report card term</span><select id="rcTerm" class="dm-select" aria-label="Report card term"></select></label>
                       <button type="button" class="doc-download" data-download="report">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
                       Download PDF
@@ -1134,7 +1135,7 @@
                   <header class="doc-bar">
                     <span class="doc-bar-title">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h6"/></svg>
-                      Custom Report - Attendance Analytics
+                      Attendance Analytics
                     </span>
                     <span class="doc-bar-actions">
                       <button type="button" class="doc-download" data-download="attendance">

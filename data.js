@@ -31,7 +31,7 @@
 ===================================================== */
 (function () {
   const STORE_KEY = 'bits-sims-academic';
-  const VERSION = 5;   // bump whenever SAMPLE changes so old browser data resets
+  const VERSION = 6;   // bump whenever SAMPLE changes so old browser data resets
 
   /* ---------- Sample data (1 student) ---------- */
   const SAMPLE = {
@@ -60,6 +60,7 @@
 
     student: {
       id: '2024-12345',
+      name: 'Dawson James Garcia',
       program: 'BS Information Technology',
       section: 'BSIT-3B',
       yearLevel: '3rd Year'
@@ -107,18 +108,25 @@
       { id: 'itp225', termId: '2526-2', code: 'ITP225', title: 'IT Ethics and Professional Practice', units: 3, instructor: 'Prof. Anton Nov', finalGrade: 1.75, status: 'passed', updated: '2026-05-19' },
 
       // AY 2026-2027, 1st Sem (current - matches the dashboard courses)
-      // Finals in mixed states: 2 posted, 1 approved and 1 submitted (both waiting for the Registrar)
-      { id: 'itp3112', termId: '2627-1', code: 'ITP3112R', title: 'System Administration and Maintenance 1', units: 3, section: 'BSIT-3B', instructor: 'Prof. Sam Miguel', schedule: 'Mon 1:00-4:00 PM', gradeStatus: { final: 'posted' }, finalGrade: 1.5, status: 'passed', updated: '2026-11-06', attendance: { held: 9, absent: 0, late: 1, excused: 0 } },
-      { id: 'gen-rp', termId: '2627-1', code: 'GEN-RP', title: 'Readings in Philippine History', units: 3, section: 'BSIT-3B', instructor: 'Prof. Anton Nov', schedule: 'Tue 9:00 AM-12:00 PM', gradeStatus: { final: 'posted' }, finalGrade: 1.5, status: 'passed', updated: '2026-11-06', attendance: { held: 5, absent: 0, late: 0, excused: 0 } },
-      { id: 'itp3111', termId: '2627-1', code: 'ITP3111R', title: 'Network Management 2', units: 3, section: 'BSIT-3B', instructor: 'Prof. Sam Miguel', schedule: 'Wed 1:00-4:00 PM', gradeStatus: { final: 'approved' }, finalGrade: 1.75, status: 'passed', updated: '2026-11-06', attendance: { held: 8, absent: 1, late: 1, excused: 0 } },
-      { id: 'ita312', termId: '2627-1', code: 'ITA312R', title: 'Platform Technologies 3 (Cloud Computing)', units: 3, section: 'BSIT-3B', instructor: 'Prof. Summer Noff', schedule: 'Thu 9:00 AM-12:00 PM', gradeStatus: { final: 'submitted' }, finalGrade: 1.75, status: 'passed', updated: '2026-11-06', attendance: { held: 7, absent: 0, late: 1, excused: 0 } }
+      // Grades and attendance here are filled in from the faculty portal (staff.js
+      // syncRecords): the faculty grade sheet is the source of truth, so a grade
+      // shows up here as submitted -> approved -> posted as it moves along.
+      { id: 'itp3112', termId: '2627-1', code: 'ITP3112R', title: 'System Administration and Maintenance 1', units: 3, section: 'BSIT-3B', instructor: 'Prof. Sam Miguel', schedule: 'Mon 1:00-4:00 PM', finalGrade: null, status: 'inprogress', updated: '2026-08-03', attendance: { held: 9, absent: 0, late: 1, excused: 0 } },
+      { id: 'gen-rp', termId: '2627-1', code: 'GEN-RP', title: 'Readings in Philippine History', units: 3, section: 'BSIT-3B', instructor: 'Prof. Anton Nov', schedule: 'Tue 9:00 AM-12:00 PM', finalGrade: null, status: 'inprogress', updated: '2026-08-03', attendance: { held: 5, absent: 0, late: 0, excused: 0 } },
+      { id: 'itp3111', termId: '2627-1', code: 'ITP3111R', title: 'Network Management 2', units: 3, section: 'BSIT-3B', instructor: 'Prof. Sam Miguel', schedule: 'Wed 1:00-4:00 PM', finalGrade: null, status: 'inprogress', updated: '2026-08-03', attendance: { held: 8, absent: 1, late: 1, excused: 0 } },
+      { id: 'ita312', termId: '2627-1', code: 'ITA312R', title: 'Platform Technologies 3 (Cloud Computing)', units: 3, section: 'BSIT-3B', instructor: 'Prof. Summer Noff', schedule: 'Thu 9:00 AM-12:00 PM', finalGrade: null, status: 'inprogress', updated: '2026-08-03', attendance: { held: 7, absent: 0, late: 1, excused: 0 } }
     ],
 
     // Overall attendance rate of past terms (for the trend chart)
     attendanceHistory: [
       { termId: '2526-1', rate: 94.0 },
       { termId: '2526-2', rate: 95.2 }
-    ]
+    ],
+
+    // Posted official grades for whole classes (every student on the roster),
+    // keyed "COURSECODE|termId". Written by staff.js when the Registrar posts a
+    // faculty grade sheet; used for transcripts and academic analytics.
+    classGrades: {}
   };
 
   /* ---------- Load / save ---------- */
@@ -268,6 +276,38 @@
       return { termId, subjects, gwa: value, standing: standing(value, subjects) };
     },
     cumulativeGwa: () => gwa(api.allSubjects()),
+
+    /* Official (posted) grades for EVERY student: the portal student's own
+       records plus posted class grade sheets. Used by transcripts, report
+       cards and academic analytics (reports never keep their own copy). */
+    officialGrades() {
+      const st = data.student, out = [];
+      data.subjects.forEach((s) => {
+        const v = studentView(s);
+        if (!hasValue(v.finalGrade) && v.status !== 'inc') return;
+        out.push({ studentNo: st.id, name: st.name, termId: s.termId, code: s.code, title: s.title, units: s.units, section: s.section || '', faculty: s.instructor || '', grade: v.finalGrade, status: v.status });
+      });
+      Object.values(data.classGrades || {}).forEach((c) => Object.entries(c.rows).forEach(([no, r]) => {
+        if (no === st.id) return;   // already counted from the student's own record
+        out.push({ studentNo: no, name: r.name, termId: c.termId, code: c.code, title: c.title, units: c.units, section: c.section, faculty: c.faculty, grade: hasValue(r.grade) ? r.grade : null,
+          status: r.status || (hasValue(r.grade) ? (r.grade <= rules().passingGrade ? 'passed' : 'failed') : 'inprogress') });
+      }));
+      return out;
+    },
+
+    // One student's official academic record, oldest term first
+    recordFor(studentNo) {
+      const mine = api.officialGrades().filter((g) => g.studentNo === studentNo);
+      const terms = data.terms.filter((t) => mine.some((g) => g.termId === t.id)).map((t) => {
+        const subjects = mine.filter((g) => g.termId === t.id).map((g) => ({ ...g, finalGrade: g.grade }));
+        const value = gwa(subjects);
+        return { term: t, subjects, gwa: value, standing: standing(value, subjects) };
+      });
+      const all = terms.flatMap((t) => t.subjects);
+      const sumUnits = (st) => all.filter((g) => g.status === st).reduce((n, g) => n + g.units, 0);
+      return { studentNo, name: mine[0] ? mine[0].name : '', terms, cumulative: gwa(all.map((g) => ({ ...g, finalGrade: g.grade }))),
+        unitsEarned: sumUnits('passed'), unitsFailed: sumUnits('failed'), inc: all.filter((g) => g.status === 'inc').length };
+    },
     unitsEarned: () => api.allSubjects().filter((s) => s.status === 'passed').reduce((sum, s) => sum + s.units, 0),
 
     /* Live updates */

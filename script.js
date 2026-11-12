@@ -818,12 +818,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Module 3 & 4 share one data source (data.js). This rebuilds the shape the
   // report builders below expect, every time that data changes.
+  // Report card term: any term whose final grades are all posted (default: the latest one)
+  let reportCardTerm = null;
   let reportData = buildReportData();
+
+  function reportCardTerms() {
+    const D = window.SIMSData;
+    return D.terms().filter((t) => D.termSummary(t.id).gwa !== null);
+  }
 
   function buildReportData() {
     const D = window.SIMSData;
     const st = D.student();
-    const last = D.lastCompletedTerm();
+    const ready = D.terms().filter((t) => D.termSummary(t.id).gwa !== null);
+    const last = ready.find((t) => t.id === reportCardTerm) || ready[ready.length - 1] || null;
     const current = D.currentTerm();
     const currentSubjects = D.subjectsIn(current.id);
 
@@ -833,8 +841,9 @@ document.addEventListener('DOMContentLoaded', () => {
       section: st.section,
       yearLevel: st.yearLevel,
 
-      // Last completed semester
+      // Chosen term (default: the latest term with every grade posted)
       reportCard: {
+        termId: last ? last.id : '',
         term: last ? last.sem : '',
         ay: last ? `AY ${last.ay}` : '',
         subjects: (last ? D.subjectsIn(last.id) : [])
@@ -1087,12 +1096,30 @@ document.addEventListener('DOMContentLoaded', () => {
     $('#repWelcome').textContent = `Welcome back, ${firstName}!`;
 
     Object.keys(paperBuilders).forEach(renderDocument);
+    fillReportCardTerms();
 
     // Stats show their final values (animateStats counts up to them)
     const stats = computeStats();
     $('[data-stat="subjects"]').textContent = stats.subjects;
     $('[data-stat="attendance"]').textContent = `${stats.attendance}%`;
     $('[data-stat="gpa"]').textContent = stats.gpa.toFixed(2);
+  }
+
+  // Report card term picker (terms whose final grades are all posted)
+  function fillReportCardTerms() {
+    const sel = $('#rcTerm');
+    if (!sel) return;
+    const cur = reportData.reportCard.termId;
+    sel.innerHTML = reportCardTerms().reverse()
+      .map((t) => `<option value="${esc(t.id)}" ${t.id === cur ? 'selected' : ''}>${esc(window.SIMSData.termLabel(t))}</option>`).join('');
+  }
+  if ($('#rcTerm')) {
+    $('#rcTerm').addEventListener('change', (e) => {
+      reportCardTerm = e.target.value;
+      reportData = buildReportData();
+      generatedAt.report = new Date();
+      renderReports();
+    });
   }
 
   // Live updates: whenever Module 3 data changes, rebuild and redraw the reports
@@ -2799,54 +2826,51 @@ document.addEventListener('DOMContentLoaded', () => {
      ATTENDANCE
      (sample data; the Reports page reads its numbers from here)
   ===================================================== */
-  const ATT_COURSES = [
-    { code: 'ITP3112R', title: 'System Administration and Maintenance 1', start: '2026-08-06', count: 9, late: [4], absent: [] },
-    { code: 'GEN-RP', title: 'Readings in Philippine History', start: '2026-09-04', count: 5, late: [], absent: [] },
-    { code: 'ITP3111R', title: 'Network Management 2', start: '2026-08-17', count: 8, late: [6], absent: [3] },
-    { code: 'ITA312R', title: 'Platform Technologies 3 (Cloud Computing)', start: '2026-08-25', count: 7, late: [2], absent: [] }
-  ];
-
+  // Sessions come from the faculty portal (staff.js writes them into data.js)
   const ATT_STATUS = {
     present: { label: 'Present', cls: 'ok' },
     late: { label: 'Late', cls: 'warn' },
+    'left early': { label: 'Left early', cls: 'warn' },
+    excused: { label: 'Excused', cls: 'info' },
     absent: { label: 'Absent', cls: 'risk' }
   };
 
-  const attPad = (n) => String(n).padStart(2, '0');
   const pillTexts = $$('.course-pill').map((pill) => pill.textContent.trim());
 
-  // Classes meet weekly: build one record per session from the start date
-  function buildSessions(course) {
-    const [y, m, d] = course.start.split('-').map(Number);
-    return Array.from({ length: course.count }, (_, i) => {
-      const date = new Date(y, m - 1, d + i * 7);
+  let attRows = [];
+  function buildAttRows() {
+    const D = window.SIMSData;
+    attRows = D.subjectsIn(D.currentTerm().id).map((sub, i) => {
+      const sessions = (sub.sessions || []).map((x) => ({ iso: x.date, status: String(x.status).toLowerCase() }));
+      const a = sub.attendance || { held: 0, absent: 0, late: 0, excused: 0 };
+      const held = sessions.length || a.held || 0;
+      const absent = sessions.length ? sessions.filter((x) => x.status === 'absent').length : a.absent || 0;
+      const late = sessions.length ? sessions.filter((x) => x.status === 'late').length : a.late || 0;
+      const excused = sessions.length ? sessions.filter((x) => x.status === 'excused').length : a.excused || 0;
+      const points = held - absent - excused; // 1 point per attended session (excused sessions don't count)
+      const pct = D.attendanceRate({ held, absent, late, excused });
       return {
-        iso: `${date.getFullYear()}-${attPad(date.getMonth() + 1)}-${attPad(date.getDate())}`,
-        status: course.absent.includes(i) ? 'absent' : course.late.includes(i) ? 'late' : 'present'
+        code: sub.code, title: sub.title,
+        label: pillTexts.find((t) => t.includes(sub.code)) || pillTexts[i] || sub.title,
+        sessions, held, absent, late, excused, points, countable: held - excused,
+        pct: pct === null ? 0 : pct,
+        last: sessions.length ? sessions[sessions.length - 1].iso : ''
       };
     });
   }
+  buildAttRows();
 
-  const attRows = ATT_COURSES.map((course, i) => {
-    const sessions = buildSessions(course);
-    const held = sessions.length;
-    const absent = sessions.filter((s) => s.status === 'absent').length;
-    const late = sessions.filter((s) => s.status === 'late').length;
-    const points = held - absent; // 1 point per attended session
-    return {
-      code: course.code,
-      title: course.title,
-      label: pillTexts[i] || course.title,
-      sessions, held, absent, late, points,
-      pct: held ? (points / held) * 100 : 0,
-      last: held ? sessions[held - 1].iso : ''
-    };
-  });
-
-  // Keep the Reports & Analytics figures in step with this page
-  reportData.attendance.subjects = attRows.map((r) => ({
-    title: r.title, held: r.held, absent: r.absent, late: r.late
-  }));
+  // Dashboard "Attendance" rows: latest session date and number of sessions
+  function renderDashAttendance() {
+    $$('.info-row[data-att-code]').forEach((row) => {
+      const r = attRows.find((x) => x.code === row.dataset.attCode);
+      if (!r) return;
+      const date = $('.attendance-date', row);
+      if (date) date.lastChild.textContent = attFmtShort(r.last);
+      const n = $('.sessions-count', row);
+      if (n) n.textContent = `${r.held} Sessions`;
+    });
+  }
 
   const attFmtShort = (iso) => {
     if (!iso) return '\u2014';
@@ -2887,7 +2911,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </td>
           <td>${attFmtShort(r.last)}</td>
           <td>${r.held} Sessions</td>
-          <td>${r.points} / ${r.held}</td>
+          <td>${r.points} / ${r.countable}</td>
           <td>
             <span class="att-pct ${tone}">${r.pct.toFixed(2)}%</span>
             <span class="att-bar ${tone}" aria-hidden="true"><span style="width:${r.pct.toFixed(1)}%"></span></span>
@@ -2901,10 +2925,11 @@ document.addEventListener('DOMContentLoaded', () => {
               ${r.sessions.map((s) => `
                 <div class="att-session">
                   <span>${esc(attFmtLong(s.iso))}</span>
-                  <span class="dm-status ${ATT_STATUS[s.status].cls}">${ATT_STATUS[s.status].label}</span>
+                  <span class="dm-status ${(ATT_STATUS[s.status] || ATT_STATUS.present).cls}">${(ATT_STATUS[s.status] || { label: s.status }).label}</span>
                 </div>`).join('')}
             </div>
-            <p class="att-summary">${r.held - r.absent - r.late} on time &middot; ${r.late} late &middot; ${r.absent} absent</p>
+            ${r.sessions.length ? '' : '<p class="att-summary">No session details recorded yet.</p>'}
+            <p class="att-summary">${r.held - r.absent - r.late - r.excused} on time &middot; ${r.late} late &middot; ${r.excused} excused &middot; ${r.absent} absent</p>
           </td>
         </tr>` : '';
 
@@ -2912,14 +2937,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }).join('');
 
     const held = attRows.reduce((sum, r) => sum + r.held, 0);
+    const countable = attRows.reduce((sum, r) => sum + r.countable, 0);
     const points = attRows.reduce((sum, r) => sum + r.points, 0);
-    const pct = held ? (points / held) * 100 : 0;
+    const pct = countable ? (points / countable) * 100 : 0;
     $('#attFoot').innerHTML = `
       <tr>
         <td>Overall</td>
         <td></td>
         <td>${held} Sessions</td>
-        <td>${points} / ${held}</td>
+        <td>${points} / ${countable}</td>
         <td><span class="att-pct ${attTone(pct)}">${pct.toFixed(2)}%</span></td>
       </tr>`;
 
@@ -2954,6 +2980,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   renderAttendance();
+  renderDashAttendance();
+
+  // Faculty submitted attendance (or the data changed in another tab): refresh
+  window.SIMSData.subscribe(() => { buildAttRows(); renderAttendance(); renderDashAttendance(); });
 
   /* ---- Init ---- */
   renderDocuments();

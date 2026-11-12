@@ -38,3 +38,6 @@
 
 /* Academic Records: posted period grades under an unreleased final grade */
 .rec-partial { display: block; margin-top: 0.15rem; font-size: 0.66rem; font-weight: 400; color: #6b7a8c; white-space: nowrap; }
+
+/* Report card term picker (doc bar) */
+.doc-term select { padding: 0.3rem 0.5rem; font-size: 0.82rem; min-width: 12rem; }
