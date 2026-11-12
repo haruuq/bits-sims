@@ -129,6 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     showLoginError('');
     if (loginNotice) loginNotice.hidden = true;
+    hideLoginPasswords();
     openPortal(result.account);
   });
 
@@ -144,7 +145,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const showMsg = (el, message) => { el.textContent = message || ''; el.hidden = !message; };
 
+  function hideLoginPasswords() {
+    $$('#loginPanel .pw-toggle, #resetPanel .pw-toggle').forEach((btn) => {
+      $('#' + btn.dataset.target).type = 'password';
+      btn.textContent = 'Show';
+      btn.setAttribute('aria-pressed', 'false');
+      btn.setAttribute('aria-label', 'Show password');
+    });
+  }
+
   function showLogin(notice) {
+    hideLoginPasswords();
     resetPanel.hidden = true;
     loginPanel.hidden = false;
     showMsg(loginNotice, notice);
@@ -152,6 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showReset() {
+    hideLoginPasswords();
     showLoginError('');
     showMsg(loginNotice, '');
     resetRequestForm.reset();
@@ -1362,6 +1374,7 @@ document.addEventListener('DOMContentLoaded', () => {
       input.type = show ? 'text' : 'password';
       btn.textContent = show ? 'Hide' : 'Show';
       btn.setAttribute('aria-pressed', String(show));
+      if (btn.hasAttribute('aria-label')) btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
     });
   });
 

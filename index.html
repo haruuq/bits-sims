@@ -44,8 +44,11 @@
 
           <div class="input-group">
             <label for="password">Password</label>
-            <input type="password" id="password" name="password" placeholder="Enter Password"
-                   autocomplete="current-password" aria-required="true" required />
+            <div class="pw-wrap">
+              <input type="password" id="password" name="password" placeholder="Enter Password"
+                     autocomplete="current-password" aria-required="true" required />
+              <button type="button" class="pw-toggle" data-target="password" aria-pressed="false" aria-label="Show password">Show</button>
+            </div>
           </div>
 
           <p id="loginError" class="login-error" role="alert" hidden></p>
@@ -89,11 +92,17 @@
             </div>
             <div class="input-group">
               <label for="resetPw">New password</label>
-              <input type="password" id="resetPw" autocomplete="new-password" placeholder="At least 8 characters, letters and numbers" />
+              <div class="pw-wrap">
+                <input type="password" id="resetPw" autocomplete="new-password" placeholder="At least 8 characters, letters and numbers" />
+                <button type="button" class="pw-toggle" data-target="resetPw" aria-pressed="false" aria-label="Show password">Show</button>
+              </div>
             </div>
             <div class="input-group">
               <label for="resetConfirm">Confirm new password</label>
-              <input type="password" id="resetConfirm" autocomplete="new-password" />
+              <div class="pw-wrap">
+                <input type="password" id="resetConfirm" autocomplete="new-password" />
+                <button type="button" class="pw-toggle" data-target="resetConfirm" aria-pressed="false" aria-label="Show password">Show</button>
+              </div>
             </div>
             <p id="resetError" class="login-error" role="alert" hidden></p>
             <button type="submit" class="submit-btn">Set new password</button>
