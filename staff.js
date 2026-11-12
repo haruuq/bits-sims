@@ -482,7 +482,7 @@
   /* ---------- small view helpers ---------- */
   const STATUS_CLS = {
     Active: 'ok', Completed: 'ok', Resolved: 'ok', Success: 'ok', Normal: 'ok', Present: 'ok', Verified: 'ok', Open: 'warn', Approved: 'ok',
-    'Pending Activation': 'warn', Pending: 'warn', Draft: 'warn', Warning: 'warn', Late: 'warn', 'Left Early': 'warn',
+    'Pending Activation': 'warn', Pending: 'warn', Draft: 'warn', Warning: 'warn', Late: 'warn', 
     Running: 'info', Investigating: 'info', Submitted: 'info', Excused: 'info', Information: 'info',
     Suspended: 'risk', Locked: 'risk', Failed: 'risk', Critical: 'risk', Error: 'risk', Absent: 'risk',
     Inactive: 'muted', Full: 'warn', Posted: 'ok', Returned: 'risk', 'On Leave': 'warn', Archived: 'muted'
@@ -869,7 +869,7 @@
   }
 
   /* ---------- ATTENDANCE (Faculty) ---------- */
-  const ATT_STATUS = ['Present', 'Absent', 'Late', 'Excused', 'Left Early'];
+  const ATT_STATUS = ['Present', 'Absent', 'Late', 'Excused'];
   function attSession(c, date) { const m = db.fac.attendance[c.id] || (db.fac.attendance[c.id] = {}); return m[date]; }
   function attDraftFor(c, date) {
     const key = c.id + '|' + date;

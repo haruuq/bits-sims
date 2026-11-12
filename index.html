@@ -138,7 +138,7 @@
         <span id="currentViewTitle" class="nav-page-label">Dashboard</span>
         <span class="nav-divider" aria-hidden="true"></span>
         <button type="button" class="user-avatar-badge" id="navAvatarBtn" aria-label="View my profile" title="View my profile">
-          <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="User avatar" data-avatar />
+          <img src="images/avatar-cat.svg" alt="User avatar" data-avatar />
         </button>
       </div>
     </header>
@@ -217,7 +217,7 @@
             <!-- Student Card -->
             <section class="dash-card student-card" id="studentCard" role="link" tabindex="0" aria-label="View my profile" title="View my profile">
               <div class="student-avatar-container">
-                <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="Student Avatar" class="student-avatar" data-avatar />
+                <img src="images/avatar-cat.svg" alt="Student Avatar" class="student-avatar" data-avatar />
               </div>
               <h2 class="student-name" data-student-name>Dawson James<br />Garcia</h2>
             </section>
@@ -229,29 +229,13 @@
                 <span class="col-heading">Attendance</span>
                 <span class="col-heading">Taken Sessions</span>
               </div>
-
-              <div class="info-row" data-att-code="ITP3112R">
-                <div class="course-text">TS-ITP3112R-BSIT-3B-1AY2627 ITP3112R-System Administration and Maintenance 1-BSIT-3B-1st Semester, AY26-27</div>
-                <div class="attendance-date">Attendance<br />10-1-2026</div>
-                <div class="sessions-count">9 Sessions</div>
-              </div>
-
-              <div class="info-row" data-att-code="GEN-RP">
-                <div class="course-text">TS-GEN-RP-BSIT-3B-1AY2627 GEN-RP-Readings in Philippine History-BSIT-3B-1st Semester, AY26-27</div>
-                <div class="attendance-date">Attendance<br />10-2-2026</div>
-                <div class="sessions-count">5 Sessions</div>
-              </div>
+              <div id="homeAttRows"></div>
             </section>
 
             <!-- Courses List -->
             <section class="dash-card courses-list-card">
               <h3 class="card-section-title">Courses</h3>
-              <ul class="course-list">
-                <li class="course-pill selected" tabindex="0">TS-ITP3112R-BSIT-3B-1AY2627 ITP3112R-System Administration and Maintenance 1-BSIT-3B-1st Semester, AY26-27</li>
-                <li class="course-pill" tabindex="0">TS-GEN-RP-BSIT-3B-1AY2627 GEN-RP-Readings in Philippine History-BSIT-3B-1st Semester, AY26-27</li>
-                <li class="course-pill selected" tabindex="0">TS-ITP3111R-BSIT-3B-1AY2627 ITP3111R-Network Management 2-BSIT-3B-1st Semester, AY26-27</li>
-                <li class="course-pill" tabindex="0">TS-ITA312R-BSIT-3B-1AY2627 ITA312R-Platform Technologies 3 (Cloud Computing)-BSIT-3B-1st Semester, AY26-27</li>
-              </ul>
+              <ul class="course-list" id="homeCourses"></ul>
             </section>
 
             <!-- Quick Action Card -->
@@ -292,14 +276,11 @@
                 <button type="button" class="profile-tab" role="tab" id="tab-picture" aria-controls="pictureForm" aria-selected="false" data-tab="picture">
                   <span class="tab-chip" aria-hidden="true">&#8250;</span> User Picture
                 </button>
-                <button type="button" class="profile-tab" role="tab" id="tab-contact" aria-controls="contactForm" aria-selected="false" data-tab="contact">
-                  <span class="tab-chip" aria-hidden="true">&#8250;</span> Contact Information
-                </button>
               </div>
 
               <div class="profile-identity">
                 <div class="profile-avatar">
-                  <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="Profile picture" data-avatar />
+                  <img src="images/avatar-cat.svg" alt="Profile picture" data-avatar />
                 </div>
                 <p class="profile-name" data-student-name>Dawson James<br />Garcia</p>
               </div>
@@ -314,48 +295,35 @@
               </div>
 
               <div class="field">
-                <label for="emailVisibility">Email Visibility</label>
-                <select id="emailVisibility" name="emailVisibility">
-                  <option value="hidden">Hidden from everyone</option>
-                  <option value="course">Visible to course participants</option>
-                  <option value="everyone">Visible to everyone</option>
-                </select>
-              </div>
-
-              <div class="field">
-                <label for="timezone">Timezone</label>
-                <select id="timezone" name="timezone">
-                  <option value="Asia/Manila">Asia / Manila</option>
-                  <option value="Asia/Singapore">Asia / Singapore</option>
-                  <option value="Asia/Tokyo">Asia / Tokyo</option>
-                  <option value="Asia/Dubai">Asia / Dubai</option>
-                  <option value="Europe/London">Europe / London</option>
-                  <option value="America/New_York">America / New York</option>
-                  <option value="America/Los_Angeles">America / Los Angeles</option>
-                  <option value="Australia/Sydney">Australia / Sydney</option>
-                </select>
-              </div>
-
-              <div class="field">
                 <label for="lastName">Last Name</label>
                 <input type="text" id="lastName" name="lastName" autocomplete="family-name" />
                 <small class="field-error" id="lastNameError"></small>
               </div>
 
               <div class="field">
-                <label for="city">City / Town</label>
-                <input type="text" id="city" name="city" autocomplete="address-level2" />
+                <label for="studentNo">Student Number</label>
+                <input type="text" id="studentNo" readonly />
               </div>
 
-              <div class="form-actions general-actions">
-                <button type="submit" class="btn-outline">Save</button>
-                <button type="button" class="btn-outline" id="generalCancel">Cancel</button>
+              <div class="field">
+                <label for="program">Program</label>
+                <input type="text" id="program" readonly />
+              </div>
+
+              <div class="field">
+                <label for="yearSection">Year &amp; Section</label>
+                <input type="text" id="yearSection" readonly />
               </div>
 
               <div class="field">
                 <label for="email">Email Address</label>
-                <input type="email" id="email" name="email" autocomplete="email" />
+                <input type="email" id="email" name="email" autocomplete="email" readonly />
                 <small class="field-error" id="emailError"></small>
+              </div>
+
+              <div class="field">
+                <label for="city">City / Town</label>
+                <input type="text" id="city" name="city" autocomplete="address-level2" />
               </div>
 
               <div class="field">
@@ -370,6 +338,12 @@
                   <option>Australia</option>
                 </select>
               </div>
+
+              <div class="form-actions general-actions">
+                <button type="submit" class="btn-outline">Save</button>
+                <button type="button" class="btn-outline" id="generalCancel">Cancel</button>
+                <small class="general-note">Student number, program, year and school email come from the registrar.</small>
+              </div>
             </form>
 
             <!-- TAB: USER PICTURE -->
@@ -377,7 +351,7 @@
               <div class="picture-current">
                 <span class="field-label">Current Picture</span>
                 <div class="current-picture-frame" id="currentPictureFrame">
-                  <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="Current profile picture" data-avatar />
+                  <img src="images/avatar-cat.svg" alt="Current profile picture" data-avatar />
                 </div>
                 <label class="check-row">
                   <input type="checkbox" id="deletePicture" />
@@ -410,29 +384,6 @@
               </div>
             </form>
 
-            <!-- TAB: CONTACT INFORMATION -->
-            <form id="contactForm" class="tab-panel contact-grid hidden" role="tabpanel" aria-labelledby="tab-contact" data-panel="contact" novalidate>
-              <div class="field">
-                <label for="currentNumber">Current Number</label>
-                <input type="text" id="currentNumber" readonly placeholder="No number on file" />
-                <label class="check-row">
-                  <input type="checkbox" id="deleteNumber" />
-                  <span>Delete number</span>
-                </label>
-              </div>
-
-              <div class="field">
-                <label for="newNumber">New Number</label>
-                <input type="tel" id="newNumber" name="newNumber" placeholder="Enter new number" autocomplete="tel" inputmode="tel" />
-                <small class="field-error" id="newNumberError"></small>
-              </div>
-
-              <div class="form-actions contact-actions">
-                <button type="submit" class="btn-outline">Save</button>
-                <button type="button" class="btn-outline" id="contactCancel">Cancel</button>
-              </div>
-            </form>
-
           </div>
         </section>
 
@@ -450,7 +401,7 @@
             <div class="rec-top">
               <section class="dash-card rec-student">
                 <div class="adm-avatar">
-                  <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="Profile picture" data-avatar />
+                  <img src="images/avatar-cat.svg" alt="Profile picture" data-avatar />
                 </div>
                 <h3 class="adm-applicant-name" data-full-name>Dawson James Garcia</h3>
                 <p class="rec-meta" data-rec="program"></p>
@@ -566,7 +517,7 @@
               <div class="adm-top">
                 <section class="dash-card dm-card adm-applicant">
                   <div class="adm-avatar">
-                    <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="Profile picture" data-avatar />
+                    <img src="images/avatar-cat.svg" alt="Profile picture" data-avatar />
                   </div>
                   <h3 class="adm-applicant-name" data-full-name>Dawson James Garcia</h3>
                   <p class="adm-applicant-id">Student ID <span data-adm="studentId"></span></p>
@@ -616,7 +567,7 @@
                 <form id="admForm" class="dash-card dm-card adm-form" novalidate>
                   <h3 class="adm-sec-title">Applicant</h3>
                   <div class="adm-applicant-row">
-                    <span class="adm-mini-avatar"><img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="" data-avatar /></span>
+                    <span class="adm-mini-avatar"><img src="images/avatar-cat.svg" alt="" data-avatar /></span>
                     <div class="adm-applicant-text">
                       <strong data-full-name>Dawson James Garcia</strong>
                       <small id="admFormEmail"></small>
@@ -812,7 +763,7 @@
 
             <header class="set-head">
               <h2>Account Settings</h2>
-              <p>Manage your contact details, password and notifications.</p>
+              <p>Manage your contact details and password.</p>
             </header>
 
             <div class="set-layout">
@@ -896,7 +847,7 @@
 
                 <section class="dash-card set-identity">
                   <div class="set-avatar">
-                    <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="Profile picture" data-avatar />
+                    <img src="images/avatar-cat.svg" alt="Profile picture" data-avatar />
                   </div>
                   <h3 class="set-name" data-full-name>Dawson James Garcia</h3>
 
@@ -906,27 +857,6 @@
                     <div><dt>School email</dt><dd data-acct="schoolEmail"></dd></div>
                   </dl>
                   <p class="set-note">Name, ID and program are managed by the registrar.</p>
-                </section>
-
-                <section class="dash-card set-notifs">
-                  <h3 class="set-card-title">Notifications</h3>
-
-                  <div class="notif-row">
-                    <div class="notif-text"><strong>Admissions updates</strong><small>Status changes on your applications</small></div>
-                    <button type="button" class="switch" role="switch" aria-checked="true" aria-label="Admissions updates" data-notif="admissions"><span class="switch-knob"></span></button>
-                  </div>
-                  <div class="notif-row">
-                    <div class="notif-text"><strong>Grades posted</strong><small>When a new grade is released</small></div>
-                    <button type="button" class="switch" role="switch" aria-checked="true" aria-label="Grades posted" data-notif="grades"><span class="switch-knob"></span></button>
-                  </div>
-                  <div class="notif-row">
-                    <div class="notif-text"><strong>Document status</strong><small>Verified, rejected or requested</small></div>
-                    <button type="button" class="switch" role="switch" aria-checked="true" aria-label="Document status" data-notif="documents"><span class="switch-knob"></span></button>
-                  </div>
-                  <div class="notif-row">
-                    <div class="notif-text"><strong>School announcements</strong><small>General news and reminders</small></div>
-                    <button type="button" class="switch" role="switch" aria-checked="false" aria-label="School announcements" data-notif="announcements"><span class="switch-knob"></span></button>
-                  </div>
                 </section>
 
               </aside>
@@ -1133,11 +1063,11 @@
 
             <section class="dash-card up-identity">
               <div class="up-avatar">
-                <img src="https://api.iconify.design/fluent-emoji-flat:cat-face.svg" alt="Profile picture" data-avatar />
+                <img src="images/avatar-cat.svg" alt="Profile picture" data-avatar />
               </div>
               <h2 class="up-name" data-full-name>Dawson James Garcia</h2>
               <p class="up-role">Student</p>
-              <p class="up-program">BSIT-3B &middot; 1st Semester, AY26-27</p>
+              <p class="up-program" id="upProgram"></p>
               <button type="button" class="btn-solid" id="editProfileBtn">Edit Profile</button>
             </section>
 
@@ -1145,12 +1075,13 @@
               <h3 class="card-section-title">Personal Information</h3>
               <dl class="up-list">
                 <div class="up-row"><dt>Full Name</dt><dd data-up="fullName"></dd></div>
+                <div class="up-row"><dt>Student Number</dt><dd data-up="studentNo"></dd></div>
+                <div class="up-row"><dt>Program</dt><dd data-up="program"></dd></div>
+                <div class="up-row"><dt>Year &amp; Section</dt><dd data-up="yearSection"></dd></div>
                 <div class="up-row"><dt>Email Address</dt><dd data-up="email"></dd></div>
-                <div class="up-row"><dt>Email Visibility</dt><dd data-up="emailVisibility"></dd></div>
                 <div class="up-row"><dt>Contact Number</dt><dd data-up="phone"></dd></div>
                 <div class="up-row"><dt>City / Town</dt><dd data-up="city"></dd></div>
                 <div class="up-row"><dt>Country</dt><dd data-up="country"></dd></div>
-                <div class="up-row"><dt>Timezone</dt><dd data-up="timezone"></dd></div>
               </dl>
             </section>
 

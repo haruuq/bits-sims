@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const sidebarItems = $$('.sidebar-item:not(#logoutBtn)');
   const currentViewTitle = $('#currentViewTitle');
 
-  const DEFAULT_AVATAR = 'https://api.iconify.design/fluent-emoji-flat:cat-face.svg';
+  const DEFAULT_AVATAR = 'images/avatar-cat.svg';   // bundled, so it shows without internet
   const STORE_KEY = 'bits-sims-profile';
 
   /* =====================================================
@@ -32,10 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
     firstName: 'Dawson James',
     lastName: 'Garcia',
     email: 'dawson.garcia@bits.edu.ph',
-    emailVisibility: 'course',
     city: 'Muntinlupa',
     country: 'Philippines',
-    timezone: 'Asia/Manila',
     phone: '09171234567',
     avatar: DEFAULT_AVATAR,
     personalEmail: 'dawson.garcia@example.com',
@@ -53,6 +51,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const saved = JSON.parse(localStorage.getItem(STORE_KEY)) || {};
       const merged = Object.assign({}, defaults, saved);
       merged.notifications = Object.assign({}, defaults.notifications, saved.notifications);
+      // Older saves pointed at the online icon; use the bundled copy instead
+      if (!merged.avatar || /^https:\/\/api\.iconify\.design\//.test(merged.avatar)) merged.avatar = DEFAULT_AVATAR;
       return merged;
     } catch (err) {
       return Object.assign({}, defaults);
@@ -337,19 +337,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* =====================================================
-     HOME: COURSE LIST SELECTION
-  ===================================================== */
-  $$('.course-pill').forEach((pill) => {
-    const toggle = () => pill.classList.toggle('selected');
-    pill.addEventListener('click', toggle);
-    pill.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        toggle();
-      }
-    });
-  });
 
   /* =====================================================
      HOME: INTERACTIVE CALENDAR
@@ -377,12 +364,17 @@ document.addEventListener('DOMContentLoaded', () => {
     calendarTitle.textContent = `${monthName} ${cal.year}`;
     calendarGrid.innerHTML = '';
 
-    ['Sun', 'Mon', 'Tue', 'Wed'].forEach((label) => {
+    ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach((label) => {
       const header = document.createElement('span');
       header.className = 'cal-header';
       header.textContent = label;
       calendarGrid.appendChild(header);
     });
+
+    // Blank cells so day 1 lands under its weekday
+    for (let i = 0; i < new Date(cal.year, cal.month, 1).getDay(); i++) {
+      calendarGrid.appendChild(Object.assign(document.createElement('span'), { className: 'cal-blank' }));
+    }
 
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(cal.year, cal.month, day);
@@ -436,7 +428,6 @@ document.addEventListener('DOMContentLoaded', () => {
   ===================================================== */
   const generalForm = $('#generalForm');
   const pictureForm = $('#pictureForm');
-  const contactForm = $('#contactForm');
 
   /* ---- Shared helpers ---- */
   function setError(id, message) {
@@ -492,18 +483,18 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ---- Read-only "My Profile" page ---- */
   function renderUserProfile() {
     const fullName = `${profile.firstName} ${profile.lastName}`.trim();
-    const visibility = $(`#emailVisibility option[value="${profile.emailVisibility}"]`);
-    const timezone = $(`#timezone option[value="${profile.timezone}"]`);
-
+    const st = window.SIMSData.student();
     const values = {
       fullName,
+      studentNo: st.id,
+      program: st.program,
+      yearSection: `${st.yearLevel} \u00B7 ${st.section}`,
       email: profile.email,
-      emailVisibility: visibility ? visibility.textContent : '',
       phone: profile.phone ? formatPhone(profile.phone) : 'No number on file',
       city: profile.city || '\u2014',
-      country: profile.country,
-      timezone: timezone ? timezone.textContent : profile.timezone
+      country: profile.country
     };
+    $('#upProgram').textContent = `${st.section} \u00B7 ${window.SIMSData.termLabel(window.SIMSData.currentTerm())}`;
 
     $$('[data-full-name]').forEach((el) => (el.textContent = fullName));
     $$('[data-up]').forEach((el) => {
@@ -525,7 +516,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     $$('.info-row').forEach((row) => {
-      const date = $('.attendance-date', row).lastChild.textContent.trim();
+      const date = $('.attendance-date', row).lastChild.textContent.trim();   // "Nov 2, 2026"
       const li = document.createElement('li');
 
       const course = document.createElement('span');
@@ -533,7 +524,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const dateEl = document.createElement('span');
       dateEl.className = 'up-att-meta';
-      dateEl.textContent = `Attendance: ${date}`;
+      dateEl.textContent = `Last session: ${date}`;
 
       const sessions = document.createElement('span');
       sessions.className = 'up-att-meta';
@@ -549,28 +540,20 @@ document.addEventListener('DOMContentLoaded', () => {
     $('#firstName').value = profile.firstName;
     $('#lastName').value = profile.lastName;
     $('#email').value = profile.email;
-    $('#emailVisibility').value = profile.emailVisibility;
-    $('#city').value = profile.city;
-    $('#country').value = profile.country;
-    $('#timezone').value = profile.timezone;
+    const st = window.SIMSData.student();
+    $('#studentNo').value = st.id;
+    $('#program').value = st.program;
+    $('#yearSection').value = `${st.yearLevel} \u00B7 ${st.section}`;
+    $('#city').value = profile.city || '';
+    $('#country').value = profile.country || 'Philippines';
     clearErrors(generalForm);
   }
 
-  function fillContact() {
-    $('#currentNumber').value = formatPhone(profile.phone);
-    $('#newNumber').value = '';
-    $('#newNumber').disabled = false;
-    $('#deleteNumber').checked = false;
-    clearErrors(contactForm);
-    renderUserProfile();
-    renderAccount();
-  }
 
   function applyProfile() {
     setNames();
     setAvatars(profile.avatar);
     fillGeneral();
-    fillContact();
   }
 
   /* ---- Tabs ---- */
@@ -594,20 +577,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const firstName = $('#firstName').value.trim();
     const lastName = $('#lastName').value.trim();
-    const email = $('#email').value.trim();
     let valid = true;
 
     clearErrors(generalForm);
 
     if (!firstName) { setError('firstName', 'First name is required.'); valid = false; }
     if (!lastName) { setError('lastName', 'Last name is required.'); valid = false; }
-    if (!email) {
-      setError('email', 'Email address is required.');
-      valid = false;
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError('email', 'Enter a valid email address.');
-      valid = false;
-    }
 
     if (!valid) {
       showToast('Please fix the highlighted fields.', 'error');
@@ -629,20 +604,12 @@ document.addEventListener('DOMContentLoaded', () => {
       try { localStorage.setItem(COR_KEY, JSON.stringify(list)); } catch (err) { /* storage unavailable */ }
     }
 
-    profile = Object.assign({}, profile, {
-      firstName: profile.firstName,
-      lastName: profile.lastName,
-      email,
-      emailVisibility: $('#emailVisibility').value,
-      city: $('#city').value.trim(),
-      country: $('#country').value,
-      timezone: $('#timezone').value
-    });
-
-    persistProfile();
-    setNames();
-    showToast(nameChanges.length ? 'Details saved. Your name change was sent to the registrar for approval.' : 'Profile details saved.', nameChanges.length ? 'info' : 'success');
-    if (nameChanges.length) fillGeneral();
+    const city = $('#city').value.trim(), country = $('#country').value;
+    const placeChanged = city !== (profile.city || '') || country !== profile.country;
+    if (placeChanged) { profile = Object.assign({}, profile, { city, country }); persistProfile(); renderUserProfile(); }
+    if (!nameChanges.length) { showToast(placeChanged ? 'Profile details saved.' : 'No changes to save.', placeChanged ? 'success' : 'info'); return; }
+    showToast(placeChanged ? 'Details saved. Your name change was sent to the registrar for approval.' : 'Your name change was sent to the registrar for approval.', 'info');
+    fillGeneral();
   });
 
   $('#generalCancel').addEventListener('click', () => {
@@ -757,53 +724,6 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast('Changes discarded.', 'info');
   });
 
-  /* ---- Contact Information tab ---- */
-  const deleteNumber = $('#deleteNumber');
-  const newNumber = $('#newNumber');
-
-  deleteNumber.addEventListener('change', () => {
-    newNumber.disabled = deleteNumber.checked;
-    if (deleteNumber.checked) {
-      newNumber.value = '';
-      setError('newNumber', '');
-    }
-  });
-
-  contactForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    clearErrors(contactForm);
-
-    if (deleteNumber.checked) {
-      profile.phone = '';
-      persistProfile();
-      fillContact();
-      showToast('Contact number deleted.');
-      return;
-    }
-
-    const raw = newNumber.value.trim();
-    if (!raw) {
-      showToast('Enter a new number or tick "Delete number" first.', 'info');
-      return;
-    }
-
-    const normalized = normalizePhone(raw);
-    if (!normalized) {
-      setError('newNumber', 'Use a PH mobile number, e.g. 0917 123 4567.');
-      showToast('Please fix the highlighted field.', 'error');
-      return;
-    }
-
-    profile.phone = normalized;
-    persistProfile();
-    fillContact();
-    showToast('Contact number updated.');
-  });
-
-  $('#contactCancel').addEventListener('click', () => {
-    fillContact();
-    showToast('Changes discarded.', 'info');
-  });
 
   /* =====================================================
      REPORTS & ANALYTICS
@@ -1310,7 +1230,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const pwMeter = $('#pwMeter');
   const pwMeterLabel = $('#pwMeterLabel');
 
-  // Fill the contact form, identity card and notification switches from saved data
+  // Fill the contact form and identity card from saved data
   function renderAccount() {
     $('#acctEmail').value = profile.personalEmail;
     $('#acctPhone').value = formatPhone(profile.phone);
@@ -1320,10 +1240,6 @@ document.addEventListener('DOMContentLoaded', () => {
     $('[data-acct="studentId"]').textContent = reportData.studentId;
     $('[data-acct="program"]').textContent = reportData.program;
     $('[data-acct="schoolEmail"]').textContent = profile.email;
-
-    $$('.switch').forEach((sw) => {
-      sw.setAttribute('aria-checked', String(Boolean(profile.notifications[sw.dataset.notif])));
-    });
   }
 
   // Clear a field's error as soon as the person edits it
@@ -1365,7 +1281,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     profile = Object.assign({}, profile, { personalEmail: email, phone, address });
     persistProfile();
-    fillContact(); // keeps the Contact Information tab in sync (and refreshes this form)
+    renderAccount();
     showToast('Contact details saved.');
   });
 
@@ -1454,17 +1370,6 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast('Password updated.');
   });
 
-  /* ---- Notifications (saved as soon as a switch is flipped) ---- */
-  $$('.switch').forEach((sw) => {
-    sw.addEventListener('click', () => {
-      const key = sw.dataset.notif;
-      const on = !profile.notifications[key];
-      profile.notifications[key] = on;
-      sw.setAttribute('aria-checked', String(on));
-      persistProfile();
-      showToast(`${sw.getAttribute('aria-label')} notifications ${on ? 'on' : 'off'}.`, on ? 'success' : 'info');
-    });
-  });
 
   /* =====================================================
      DOCUMENT MANAGEMENT
@@ -2693,8 +2598,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const recUnits = (subjects) => subjects.reduce((sum, s) => sum + s.units, 0);
 
-  // "1st Semester" + "2026-2027" -> "1st Sem, AY 2026-27"
-  const recTermLabel = (t) => `${t.sem.replace('Semester', 'Sem')}, AY ${t.ay.slice(0, 4)}\u2013${t.ay.slice(7, 9)}`;
 
   const REC_REMARKS = {
     passed: '<span class="dm-status ok">Passed</span>',
@@ -2728,14 +2631,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Stat cards
     $('#recTermGwa').textContent = gwa === null ? '\u2014' : fmtGwa(gwa);
-    $('#recTermGwaSub').textContent = gwa === null ? 'Grades not yet posted' : summary.standing;
+    const postedN = subjects.filter((x) => typeof x.finalGrade === 'number' || x.status === 'inc').length;
+    $('#recTermGwaSub').textContent = gwa !== null ? summary.standing : postedN ? `${postedN} of ${subjects.length} grades posted` : 'No grades posted yet';
     $('#recUnits').textContent = units;
     $('#recUnitsSub').textContent = `${subjects.length} courses`;
     $('#recCumulative').textContent = cumulative === null ? '\u2014' : fmtGwa(cumulative);
 
     // Term chips (newest first)
     $('#recTerms').innerHTML = [...REC.terms()].reverse().map((t) => `
-      <button type="button" class="dm-chip${t.id === term.id ? ' active' : ''}" data-term="${esc(t.id)}" aria-pressed="${t.id === term.id}">${esc(recTermLabel(t))}</button>`).join('');
+      <button type="button" class="dm-chip${t.id === term.id ? ' active' : ''}" data-term="${esc(t.id)}" aria-pressed="${t.id === term.id}">${esc(REC.termLabel(t))}</button>`).join('');
 
     // Grades table
     const periods = REC.rules().gradingPeriods;
@@ -2829,12 +2733,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const ATT_STATUS = {
     present: { label: 'Present', cls: 'ok' },
     late: { label: 'Late', cls: 'warn' },
-    'left early': { label: 'Left early', cls: 'warn' },
     excused: { label: 'Excused', cls: 'info' },
     absent: { label: 'Absent', cls: 'risk' }
   };
 
-  const pillTexts = $$('.course-pill').map((pill) => pill.textContent.trim());
 
   let attRows = [];
   function buildAttRows() {
@@ -2850,7 +2752,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const pct = D.attendanceRate({ held, absent, late, excused });
       return {
         code: sub.code, title: sub.title,
-        label: pillTexts.find((t) => t.includes(sub.code)) || pillTexts[i] || sub.title,
+        label: `${sub.code} \u00B7 ${sub.title}`,
         sessions, held, absent, late, excused, points, countable: held - excused,
         pct: pct === null ? 0 : pct,
         last: sessions.length ? sessions[sessions.length - 1].iso : ''
@@ -2859,22 +2761,42 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   buildAttRows();
 
-  // Dashboard "Attendance" rows: latest session date and number of sessions
+  // Home: attendance rows and course list for every current course (from the records).
+  // Clicking a course opens it on the Attendance page.
   function renderDashAttendance() {
-    $$('.info-row[data-att-code]').forEach((row) => {
-      const r = attRows.find((x) => x.code === row.dataset.attCode);
-      if (!r) return;
-      const date = $('.attendance-date', row);
-      if (date) date.lastChild.textContent = attFmtShort(r.last);
-      const n = $('.sessions-count', row);
-      if (n) n.textContent = `${r.held} Sessions`;
-    });
+    $('#homeAttRows').innerHTML = attRows.map((r) => `
+      <div class="info-row" data-att-code="${esc(r.code)}" role="link" tabindex="0" title="Open ${esc(r.code)} attendance">
+        <div class="course-text">${esc(r.label)}</div>
+        <div class="attendance-date">Last session<br />${esc(attFmtShort(r.last))}</div>
+        <div class="sessions-count">${r.held} Sessions</div>
+      </div>`).join('');
+    $('#homeCourses').innerHTML = attRows.map((r) => `
+      <li class="course-pill" tabindex="0" role="link" data-att-code="${esc(r.code)}" title="Open ${esc(r.code)} attendance">${esc(r.label)}</li>`).join('');
+    buildAcademicSummary();
   }
+
+  function openCourseAttendance(code) {
+    attOpen.add(code);
+    renderAttendance();
+    setActivePage($('.sidebar-item[data-page="attendance"]'));
+    const row = $(`.att-row[data-att="${code}"]`);
+    if (row) row.scrollIntoView({ block: 'center' });
+  }
+  ['#homeAttRows', '#homeCourses'].forEach((sel) => {
+    $(sel).addEventListener('click', (e) => {
+      const el = e.target.closest('[data-att-code]');
+      if (el) openCourseAttendance(el.dataset.attCode);
+    });
+    $(sel).addEventListener('keydown', (e) => {
+      const el = e.target.closest('[data-att-code]');
+      if (el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openCourseAttendance(el.dataset.attCode); }
+    });
+  });
 
   const attFmtShort = (iso) => {
     if (!iso) return '\u2014';
     const [y, m, d] = iso.split('-').map(Number);
-    return `${m}-${d}-${y}`; // 10-1-2026, as on the dashboard
+    return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
   const attFmtLong = (iso) => {
