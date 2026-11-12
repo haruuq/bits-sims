@@ -51,7 +51,7 @@
     reports: 'bits-sims-staff-reports', pw: 'bits-sims-staff-pw', locks: 'bits-sims-staff-locks'
   };
   // Bump when the seed data changes so everyone's old browser data resets
-  const STAFF_VERSION = 3;
+  const STAFF_VERSION = 4;
   try {
     if (localStorage.getItem('bits-sims-staff-version') !== String(STAFF_VERSION)) {
       Object.values(K).forEach((k) => localStorage.removeItem(k));
@@ -216,7 +216,7 @@
     { id: 'CO-1', code: 'ITP3112R', title: 'System Administration and Maintenance 1', section: '3B', year: '3rd Year', faculty: 'faculty.reyes', day: 'Monday', start: '08:00', end: '11:00', room: 'ITLAB-01', modality: 'Face-to-Face', type: 'Combined', capacity: 40, size: 8, status: 'Open' },
     { id: 'CO-2', code: 'ITP3111R', title: 'Network Management 2', section: '3B', year: '3rd Year', faculty: 'faculty.reyes', day: 'Tuesday', start: '13:00', end: '16:00', room: 'ITLAB-02', modality: 'Face-to-Face', type: 'Combined', capacity: 40, size: 8, status: 'Open' },
     { id: 'CO-3', code: 'ITA312R', title: 'Platform Technologies 3 (Cloud Computing)', section: '3B', year: '3rd Year', faculty: 'faculty.reyes', day: 'Wednesday', start: '09:00', end: '12:00', room: 'ITLAB-01', modality: 'Face-to-Face', type: 'Combined', capacity: 40, size: 8, status: 'Open' },
-    { id: 'CO-4', code: 'GEN-RP', title: 'Readings in Philippine History', section: '3B', year: '3rd Year', faculty: 'faculty.tan', day: 'Friday', start: '10:00', end: '12:00', room: 'RM-204', modality: 'Face-to-Face', type: 'Lecture', capacity: 45, size: 41, status: 'Open' }
+    { id: 'CO-4', code: 'GEN-RP', title: 'Readings in Philippine History', section: '3B', year: '3rd Year', faculty: 'faculty.tan', day: 'Friday', start: '10:00', end: '12:00', room: 'RM-204', modality: 'Face-to-Face', type: 'Lecture', capacity: 45, size: 8, status: 'Open' }
   ];
 
   const ROSTER = [
@@ -287,6 +287,8 @@
   db.fac.corrections = db.fac.corrections || [];
   db.fac.overrides = db.fac.overrides || {};
   queueSync();   // bring the academic records in line with the faculty data on load
+  // Raise attendance alerts for what is already recorded (not only on the next submit)
+  Promise.resolve().then(() => db.classes.forEach((c) => evaluateAlerts(c)));
 
   // Another tab (e.g. the Registrar or a faculty member) changed staff data: reload it here
   window.addEventListener('storage', (e) => {
@@ -617,11 +619,11 @@
         <div class="staff-stats">
           ${stat('GRADES TO REVIEW', waiting.length, waiting.length ? 'Submitted by faculty' : 'Nothing waiting')}
           ${stat('CLASS OFFERINGS', db.classes.length, `${totalConflicts()} schedule conflict(s)`)}
-          ${stat('DEPARTMENT STUDENTS', studs.filter((s) => s.status === 'Active').length, `${studs.length} on record`)}
+          ${stat('ACTIVE STUDENTS', studs.filter((s) => s.status === 'Active').length, `of ${studs.length} department students on record`)}
           ${stat('FACULTY TEACHING', facs.length, 'With at least one class', 'is-blue')}
         </div>
         <div class="staff-split">
-          ${card('Grade sheets awaiting review', table(['Course', 'Faculty', 'Period', ''], waiting.map((g) => `<tr><td><strong>${esc(g.code)}</strong> ${esc(g.section)}<br><small>${esc(g.title)}</small></td><td>${esc(g.faculty)}</td><td>${esc(g.period)}</td><td><button type="button" class="btn-solid btn-sm" data-act="rev-open" data-id="${g.classId}" data-period="${g.period}">Review</button></td></tr>`), 'No grade sheets are waiting for your review.'))}
+          ${card('Grade sheets awaiting review', table(['Course', 'Faculty', ...(PERIODS.length > 1 ? ['Period'] : []), ''], waiting.map((g) => `<tr><td><strong>${esc(g.code)}</strong> ${esc(g.section)}<br><small>${esc(g.title)}</small></td><td>${esc(g.faculty)}</td>${PERIODS.length > 1 ? `<td>${esc(g.period)}</td>` : ''}<td><button type="button" class="btn-solid btn-sm" data-act="rev-open" data-id="${g.classId}" data-period="${g.period}">Review</button></td></tr>`), 'No grade sheets are waiting for your review.'))}
           <div class="staff-stack">
             ${card('Quick actions', `<div class="staff-quick"><button type="button" class="btn-solid" data-act="cls-new">+ New class offering</button><button type="button" class="btn-light" data-nav="review">Grade review</button><button type="button" class="btn-light" data-nav="attendance">Attendance</button></div>`)}
             ${card('Faculty workload', `<ul class="staff-list">${facs.map((u) => { const mine = db.classes.filter((c) => c.faculty === u); return `<li><div><strong>${esc(userName(u))}</strong><small>${esc(mine.map((c) => c.code).join(', '))}</small></div><span>${mine.length} class${mine.length === 1 ? '' : 'es'}</span></li>`; }).join('')}</ul>`)}
@@ -1051,7 +1053,7 @@
     { id: 'deptstudents', name: 'Department Student List', roles: ['DEPT_HEAD'], filters: [], build: () => ({ cols: ['Student no.', 'Name', 'Program', 'Year', 'Admission', 'Status'], rows: deptStudents().map((s) => [s.no, s.name, s.program, s.year, s.admission, s.status]) }) },
     { id: 'deptstatus', name: 'Department Student Status Report', roles: ['DEPT_HEAD'], filters: [], build: () => ({ cols: ['Status', 'Students'], rows: Object.entries(deptStudents().reduce((a, s) => { a[s.status] = (a[s.status] || 0) + 1; return a; }, {})) }) },
     { id: 'deptatt', name: 'Department Attendance Summary', roles: ['DEPT_HEAD'], filters: [], build: () => ({ cols: ['Course', 'Section', 'Faculty', 'Meetings', 'Absences', 'Late', 'Attendance %'], rows: attendanceSummary().map((r) => [r.code, r.section, r.faculty, r.held, r.absent, r.late, r.rate === null ? '\u2014' : r.rate.toFixed(1) + '%']) }) },
-    { id: 'deptgrades', name: 'Grade Submission Status', roles: ['DEPT_HEAD'], filters: [], build: () => ({ cols: ['Course', 'Section', 'Faculty', 'Period', 'Status'], rows: gradeSheetsList().map((g) => [g.code, g.section, g.faculty, g.period, g.status]) }) },
+    { id: 'deptgrades', name: 'Grade Submission Status', roles: ['DEPT_HEAD'], filters: [], build: () => ({ cols: ['Course', 'Section', 'Faculty', ...(PERIODS.length > 1 ? ['Period'] : []), 'Status'], rows: gradeSheetsList().map((g) => [g.code, g.section, g.faculty, ...(PERIODS.length > 1 ? [g.period] : []), g.status]) }) },
     { id: 'classlist', name: 'Class List', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['#', 'Student number', 'Name', 'Course', 'Section', 'Faculty'], rows: ROSTER.map((s, i) => [i + 1, s.sn, s.name, c.code, c.section, me.name]) }) },
     { id: 'daily', name: 'Daily Attendance Report', roles: ['FACULTY'], filters: ['class', 'date'], build: (c) => { const s = attSession(c, ui.rep.date); return { cols: ['Student number', 'Name', 'Status', 'Time in', 'Time out', 'Remarks'], rows: s ? ROSTER.map((r) => { const x = s.rows[r.sn] || {}; return [r.sn, r.name, x.status || '\u2014', x.timeIn || '\u2014', x.timeOut || '\u2014', x.remarks || '']; }) : [] }; } },
     { id: 'attsum', name: 'Student Attendance Summary', roles: ['FACULTY'], filters: ['class'], build: (c) => ({ cols: ['Student number', 'Name', 'Sessions', 'Attended', 'Attendance %'], rows: ROSTER.map((s) => { const a = attPct(c.id, s.sn); return [s.sn, s.name, a.held, a.att, a.pct.toFixed(1) + '%']; }) }) },
@@ -1379,7 +1381,7 @@
         ${stat('POSTED', n('Posted'), 'Official grades', 'is-blue')}
       </div>
       ${correctionsCard(corrections().filter((x) => x.status !== 'Applied' || x.history.some((h) => h.by === me.username)), 'Grade corrections', true)}
-      ${card('', table(['Course', 'Section', 'Faculty', 'Period', 'Status', 'Remarks', ''], list.map((g) => `<tr><td><strong>${esc(g.code)}</strong><br><small>${esc(g.title)}</small></td><td>${esc(g.section)}</td><td>${esc(g.faculty)}</td><td>${esc(g.period)}</td><td>${badge(g.status)}</td><td><small>${g.note ? esc(g.note.note) : '\u2014'}</small></td>
+      ${card('', table(['Course', 'Section', 'Faculty', ...(PERIODS.length > 1 ? ['Period'] : []), 'Status', 'Remarks', ''], list.map((g) => `<tr><td><strong>${esc(g.code)}</strong><br><small>${esc(g.title)}</small></td><td>${esc(g.section)}</td><td>${esc(g.faculty)}</td>${PERIODS.length > 1 ? `<td>${esc(g.period)}</td>` : ''}<td>${badge(g.status)}</td><td><small>${g.note ? esc(g.note.note) : '\u2014'}</small></td>
         <td>${g.status === 'Draft' ? '<small>Not yet submitted</small>' : `<button type="button" class="btn-${g.status === 'Submitted' ? 'solid' : 'light'} btn-sm" data-act="rev-open" data-id="${g.classId}" data-period="${g.period}">${g.status === 'Submitted' ? 'Review' : 'View'}</button>`}</td></tr>`), 'No grade sheets yet.'))}`;
   };
 
